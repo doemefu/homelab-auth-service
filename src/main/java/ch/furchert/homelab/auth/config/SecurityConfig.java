@@ -25,7 +25,7 @@ public class SecurityConfig {
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
 
     @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain filterChain(HttpSecurity http) {
         http
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -46,12 +46,12 @@ public class SecurityConfig {
                         .authenticationEntryPoint((req, res, e) -> {
                             res.setContentType("application/json");
                             res.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-                            res.getWriter().write("{\"status\":401,\"error\":\"Unauthorized\"}");
+                            res.getWriter().write("{\"status\":401,\"error\":\"Unauthorized\",\"timestamp\":\"" + java.time.Instant.now() + "\"}");
                         })
                         .accessDeniedHandler((req, res, e) -> {
                             res.setContentType("application/json");
                             res.setStatus(HttpServletResponse.SC_FORBIDDEN);
-                            res.getWriter().write("{\"status\":403,\"error\":\"Forbidden\"}");
+                            res.getWriter().write("{\"status\":403,\"error\":\"Forbidden\",\"timestamp\":\"" + java.time.Instant.now() + "\"}");
                         })
                 )
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
@@ -65,7 +65,7 @@ public class SecurityConfig {
     }
 
     @Bean
-    public AuthenticationManager authenticationManager(AuthenticationConfiguration config) throws Exception {
+    public AuthenticationManager authenticationManager(AuthenticationConfiguration config) {
         return config.getAuthenticationManager();
     }
 }

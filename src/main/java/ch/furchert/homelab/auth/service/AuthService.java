@@ -18,8 +18,12 @@ import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.security.interfaces.RSAPublicKey;
-import java.time.LocalDateTime;
+import java.time.Instant;
+import java.util.HexFormat;
 import java.util.Map;
 import java.util.UUID;
 
@@ -48,9 +52,8 @@ public class AuthService {
 
         RefreshToken refreshToken = new RefreshToken();
         refreshToken.setUser(user);
-        refreshToken.setToken(rawRefreshToken);
-        refreshToken.setExpiresAt(LocalDateTime.now().plusSeconds(
-                rsaKeyProperties.getRefreshTokenExpiry() / 1000));
+        refreshToken.setToken(hashToken(rawRefreshToken));
+        refreshToken.setExpiresAt(Instant.now().plusMillis(rsaKeyProperties.getRefreshTokenExpiry()));
         refreshTokenRepository.save(refreshToken);
 
         return new LoginResponse(accessToken, rawRefreshToken);
@@ -58,10 +61,11 @@ public class AuthService {
 
     @Transactional
     public LoginResponse refresh(String rawRefreshToken) {
-        RefreshToken stored = refreshTokenRepository.findByToken(rawRefreshToken)
+        String hashedToken = hashToken(rawRefreshToken);
+        RefreshToken stored = refreshTokenRepository.findByToken(hashedToken)
                 .orElseThrow(() -> new IllegalArgumentException("Invalid refresh token"));
 
-        if (stored.getExpiresAt().isBefore(LocalDateTime.now())) {
+        if (stored.getExpiresAt().isBefore(Instant.now())) {
             refreshTokenRepository.delete(stored);
             throw new IllegalArgumentException("Refresh token expired");
         }
@@ -76,9 +80,8 @@ public class AuthService {
 
         RefreshToken newRefreshToken = new RefreshToken();
         newRefreshToken.setUser(user);
-        newRefreshToken.setToken(newRawRefreshToken);
-        newRefreshToken.setExpiresAt(LocalDateTime.now().plusSeconds(
-                rsaKeyProperties.getRefreshTokenExpiry() / 1000));
+        newRefreshToken.setToken(hashToken(newRawRefreshToken));
+        newRefreshToken.setExpiresAt(Instant.now().plusMillis(rsaKeyProperties.getRefreshTokenExpiry()));
         refreshTokenRepository.save(newRefreshToken);
 
         return new LoginResponse(newAccessToken, newRawRefreshToken);
@@ -91,10 +94,22 @@ public class AuthService {
         refreshTokenRepository.deleteByUser(user);
     }
 
+    private String hashToken(String rawToken) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(rawToken.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(hash);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 not available", e);
+        }
+    }
+
     public Map<String, Object> getJwks() {
         RSAPublicKey publicKey = (RSAPublicKey) rsaKeyProvider.getPublicKey();
-        // RsaPublicJwk extends Map<String, Object> — it IS the JWK map
-        io.jsonwebtoken.security.RsaPublicJwk jwk = Jwks.builder().key(publicKey).build();
+        io.jsonwebtoken.security.RsaPublicJwk jwk = Jwks.builder()
+                .key(publicKey)
+                .id(JwtService.KEY_ID)
+                .build();
         return Map.of("keys", java.util.List.of(jwk));
     }
 }

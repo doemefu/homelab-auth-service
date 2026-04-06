@@ -21,7 +21,8 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -82,11 +83,11 @@ class AuthServiceTest {
     void refresh_withValidToken_rotatesAndReturnsNewTokens() {
         String rawToken = "old-refresh-token";
         RefreshToken stored = new RefreshToken();
-        stored.setToken(rawToken);
+        stored.setToken("hashed-value");
         stored.setUser(user);
-        stored.setExpiresAt(LocalDateTime.now().plusDays(1));
+        stored.setExpiresAt(Instant.now().plus(1, ChronoUnit.DAYS));
 
-        when(refreshTokenRepository.findByToken(rawToken)).thenReturn(Optional.of(stored));
+        when(refreshTokenRepository.findByToken(anyString())).thenReturn(Optional.of(stored));
         when(jwtService.generateAccessToken("testuser", "USER")).thenReturn("new-access-token");
         when(rsaKeyProperties.getRefreshTokenExpiry()).thenReturn(604800000L);
         when(refreshTokenRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -102,11 +103,11 @@ class AuthServiceTest {
     void refresh_withExpiredToken_throwsIllegalArgument() {
         String rawToken = "expired-token";
         RefreshToken stored = new RefreshToken();
-        stored.setToken(rawToken);
+        stored.setToken("hashed-value");
         stored.setUser(user);
-        stored.setExpiresAt(LocalDateTime.now().minusDays(1));
+        stored.setExpiresAt(Instant.now().minus(1, ChronoUnit.DAYS));
 
-        when(refreshTokenRepository.findByToken(rawToken)).thenReturn(Optional.of(stored));
+        when(refreshTokenRepository.findByToken(anyString())).thenReturn(Optional.of(stored));
 
         assertThatThrownBy(() -> authService.refresh(rawToken))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -117,7 +118,7 @@ class AuthServiceTest {
 
     @Test
     void refresh_withUnknownToken_throwsIllegalArgument() {
-        when(refreshTokenRepository.findByToken("unknown")).thenReturn(Optional.empty());
+        when(refreshTokenRepository.findByToken(anyString())).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> authService.refresh("unknown"))
                 .isInstanceOf(IllegalArgumentException.class)

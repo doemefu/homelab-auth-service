@@ -18,7 +18,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -46,7 +46,7 @@ class UserControllerTest {
 
     private UserResponse sampleUser() {
         return new UserResponse(1L, "testuser", "test@example.com", "USER", "ACTIVE",
-                LocalDateTime.now(), LocalDateTime.now());
+                Instant.now(), Instant.now());
     }
 
     @Test
@@ -99,7 +99,7 @@ class UserControllerTest {
         // Principal must be a plain String to match @AuthenticationPrincipal String username
         UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
                 "testuser", null, List.of(new SimpleGrantedAuthority("ROLE_USER")));
-        when(userService.getUser(eq(1L), eq("testuser"), eq(false))).thenReturn(sampleUser());
+        when(userService.getUser(1L, "testuser", false)).thenReturn(sampleUser());
 
         mockMvc.perform(get("/api/v1/users/1")
                         .with(authentication(auth)))

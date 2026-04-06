@@ -9,9 +9,12 @@ JWT authentication service for the doemefu homelab IoT ecosystem.
 ## Responsibilities
 
 - User CRUD (create, read, update, delete, password reset)
-- JWT issuance and refresh (jjwt + RSA key pair)
+- JWT issuance and refresh (jjwt + RSA key pair, `kid: auth-service-v1`)
 - JWKS endpoint for downstream services to validate tokens locally
 - Role-based access control: `USER`, `ADMIN`
+- Refresh tokens are SHA-256 hashed before database storage
+- Username change or password reset invalidates all refresh tokens for the user
+- Automatic purge of expired refresh tokens (hourly scheduled task)
 
 **Does NOT:** talk to MQTT, InfluxDB, or any other service at runtime. Fully self-contained.
 
@@ -26,7 +29,7 @@ All endpoints are prefixed `/api/v1`.
 | POST | `/api/v1/auth/login` | None | Returns `accessToken` + `refreshToken` |
 | POST | `/api/v1/auth/refresh` | None (body: `refreshToken`) | Rotates refresh token, returns new pair |
 | POST | `/api/v1/auth/logout` | Bearer JWT | Invalidates all refresh tokens for caller |
-| GET | `/api/v1/auth/jwks` | None | RSA public key in JWK Set format |
+| GET | `/api/v1/auth/jwks` | None | RSA public key in JWK Set format (`kid: auth-service-v1`) |
 | POST | `/api/v1/users` | ADMIN | Create user |
 | GET | `/api/v1/users/{id}` | JWT (ADMIN or own ID) | Get user |
 | PUT | `/api/v1/users/{id}` | ADMIN | Update user |
@@ -97,6 +100,8 @@ export DB_PASSWORD=homelab
 | `app.jwt.access-token-expiry` | — | `900000` ms (15 min) |
 | `app.jwt.refresh-token-expiry` | — | `604800000` ms (7 days) |
 
+Expired refresh tokens are automatically purged every hour by `TokenCleanupScheduler`. No additional configuration required.
+
 ---
 
 ## Bootstrap — First Admin User
@@ -129,7 +134,7 @@ Other services validate JWTs by fetching the RSA public key from `/api/v1/auth/j
 ## K8s Deployment
 
 Manifests are in `k8s/`:
-- `k8s/deployment.yaml` — Deployment in namespace `apps`, mounts RSA keys from Secret `homelab-auth-rsa-keys`, reads DB credentials from Secret `homelab-db-credentials`
+- `k8s/deployment.yaml` — Deployment in namespace `apps`, image tag `:<git-sha>` (replace before `kubectl apply`), mounts RSA keys from Secret `homelab-auth-rsa-keys`, reads DB credentials from Secret `homelab-db-credentials`
 - `k8s/service.yaml` — ClusterIP Service on port 8080
 
 Required Secrets (must exist in namespace `apps` before first deploy):

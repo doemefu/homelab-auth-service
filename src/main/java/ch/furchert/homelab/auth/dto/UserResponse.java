@@ -2,7 +2,7 @@ package ch.furchert.homelab.auth.dto;
 
 import ch.furchert.homelab.auth.entity.User;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 public record UserResponse(
         Long id,
@@ -10,8 +10,8 @@ public record UserResponse(
         String email,
         String role,
         String status,
-        LocalDateTime createdAt,
-        LocalDateTime updatedAt
+        Instant createdAt,
+        Instant updatedAt
 ) {
     public static UserResponse from(User user) {
         return new UserResponse(

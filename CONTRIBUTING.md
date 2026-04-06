@@ -75,12 +75,20 @@ The service connects to database `homelabdb` on `localhost:5432` (default in `ap
 - **`SecurityConfig` must be explicitly `@Import`ed** in `@WebMvcTest` tests — it is no longer auto-scanned by the web slice
 - **`@WithMockUser` does not work** with `STATELESS` session policy and Spring Security 7's `SecurityContextHolderFilter`. Use `SecurityMockMvcRequestPostProcessors.user(...).roles(...)` as a request post-processor instead. For endpoints that resolve `@AuthenticationPrincipal String username`, use `authentication(new UsernamePasswordAuthenticationToken("username", ...))` so the principal is a plain `String` (matching what `JwtAuthenticationFilter` sets in production)
 - **`JwtAuthenticationFilter` must not be mocked** in `@WebMvcTest` — mock `JwtService` instead. `OncePerRequestFilter.doFilter()` is `final` so Mockito cannot intercept it; mocking the filter breaks the entire filter chain
+- **Timestamps** — all entity timestamps use `java.time.Instant` (mapped to PostgreSQL `TIMESTAMPTZ`). Do not use `LocalDateTime` for any new timestamp fields.
+- **Refresh tokens** — SHA-256 hashed (hex-encoded) before database storage. Integration tests that directly query `refresh_tokens` must compare against the hashed value, not the raw token string.
 
 ---
 
 ## Database Migrations
 
 All schema changes go through Flyway. Migration files are in `src/main/resources/db/migration/` and follow `V{n}__{description}.sql` (two underscores).
+
+Current migrations:
+- **V1** — Initial schema: `users` + `refresh_tokens` tables
+- **V2** — Widens `password_hash` to `VARCHAR(255)`, resizes `refresh_tokens.token` to `VARCHAR(64)` for SHA-256 hashes, converts all timestamps to `TIMESTAMPTZ`
+
+New migrations should follow `V3__description.sql`.
 
 Never edit or delete an existing migration file — Flyway checksums will fail on next startup.
 

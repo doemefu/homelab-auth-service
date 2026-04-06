@@ -5,7 +5,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 @Entity
 @Table(name = "users")
@@ -24,7 +24,7 @@ public class User {
     @Column(nullable = false, unique = true, length = 100)
     private String email;
 
-    @Column(name = "password_hash", nullable = false, length = 72)
+    @Column(name = "password_hash", nullable = false, length = 255)
     private String passwordHash;
 
     @Column(nullable = false, length = 10)
@@ -34,19 +34,19 @@ public class User {
     private String status = "ACTIVE";
 
     @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 
     @Column(name = "updated_at", nullable = false)
-    private LocalDateTime updatedAt;
+    private Instant updatedAt;
 
     @PrePersist
     void onCreate() {
-        createdAt = LocalDateTime.now();
-        updatedAt = LocalDateTime.now();
+        createdAt = Instant.now();
+        updatedAt = Instant.now();
     }
 
     @PreUpdate
     void onUpdate() {
-        updatedAt = LocalDateTime.now();
+        updatedAt = Instant.now();
     }
 }

@@ -17,8 +17,9 @@ spec:
     spec:
       containers:
         - name: auth-service
-          image: ghcr.io/doemefu/homelab-auth-service:latest
-          imagePullPolicy: IfNotPresent
+          # Replace <SHA> with the git commit SHA from CI/CD before applying
+          image: ghcr.io/doemefu/homelab-auth-service:<SHA>
+          imagePullPolicy: Always
           ports:
             - containerPort: 8080
           env:

@@ -15,6 +15,7 @@ public class JwtService {
 
     private static final String ISSUER = "homelab-auth-service";
     private static final String CLAIM_ROLE = "role";
+    public static final String KEY_ID = "auth-service-v1";
 
     private final RsaKeyProvider rsaKeyProvider;
     private final RsaKeyProperties rsaKeyProperties;
@@ -22,6 +23,7 @@ public class JwtService {
     public String generateAccessToken(String username, String role) {
         long now = System.currentTimeMillis();
         return Jwts.builder()
+                .header().keyId(KEY_ID).and()
                 .issuer(ISSUER)
                 .subject(username)
                 .claim(CLAIM_ROLE, role)

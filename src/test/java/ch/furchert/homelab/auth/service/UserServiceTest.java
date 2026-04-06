@@ -6,6 +6,7 @@ import ch.furchert.homelab.auth.dto.UpdateUserRequest;
 import ch.furchert.homelab.auth.dto.UserResponse;
 import ch.furchert.homelab.auth.entity.User;
 import ch.furchert.homelab.auth.exception.ResourceNotFoundException;
+import ch.furchert.homelab.auth.repository.RefreshTokenRepository;
 import ch.furchert.homelab.auth.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,6 +30,8 @@ class UserServiceTest {
 
     @Mock
     private UserRepository userRepository;
+    @Mock
+    private RefreshTokenRepository refreshTokenRepository;
     @Mock
     private PasswordEncoder passwordEncoder;
 
@@ -122,7 +125,7 @@ class UserServiceTest {
     }
 
     @Test
-    void updateUser_withNewUsername_updatesSuccessfully() {
+    void updateUser_withNewUsername_updatesAndInvalidatesTokens() {
         UpdateUserRequest request = new UpdateUserRequest("updateduser", null, null, null);
         when(userRepository.findById(1L)).thenReturn(Optional.of(existingUser));
         when(userRepository.existsByUsername("updateduser")).thenReturn(false);
@@ -132,6 +135,19 @@ class UserServiceTest {
 
         assertThat(response).isNotNull();
         verify(userRepository).save(any(User.class));
+        verify(refreshTokenRepository).deleteByUser(existingUser);
+    }
+
+    @Test
+    void updateUser_withSameUsername_doesNotInvalidateTokens() {
+        UpdateUserRequest request = new UpdateUserRequest(null, "new@example.com", null, null);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(existingUser));
+        when(userRepository.existsByEmail("new@example.com")).thenReturn(false);
+        when(userRepository.save(any(User.class))).thenReturn(existingUser);
+
+        userService.updateUser(1L, request);
+
+        verify(refreshTokenRepository, never()).deleteByUser(any());
     }
 
     @Test
@@ -196,5 +212,38 @@ class UserServiceTest {
         assertThatThrownBy(() -> userService.resetPassword(1L, request, "testuser", false))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Current password is required");
+    }
+
+    @Test
+    void resetPassword_invalidatesRefreshTokens() {
+        ResetPasswordRequest request = new ResetPasswordRequest(null, "newpassword123");
+        when(userRepository.findById(1L)).thenReturn(Optional.of(existingUser));
+        when(passwordEncoder.encode("newpassword123")).thenReturn("$2a$12$newhash");
+        when(userRepository.save(any(User.class))).thenReturn(existingUser);
+
+        userService.resetPassword(1L, request, "admin", true);
+
+        verify(refreshTokenRepository).deleteByUser(existingUser);
+    }
+
+    @Test
+    void createUser_withInvalidRole_throwsIllegalArgument() {
+        CreateUserRequest request = new CreateUserRequest("newuser", "new@example.com", "password123", "SUPERADMIN");
+        when(userRepository.existsByUsername("newuser")).thenReturn(false);
+        when(userRepository.existsByEmail("new@example.com")).thenReturn(false);
+
+        assertThatThrownBy(() -> userService.createUser(request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Invalid role");
+    }
+
+    @Test
+    void updateUser_withInvalidRole_throwsIllegalArgument() {
+        UpdateUserRequest request = new UpdateUserRequest(null, null, "SUPERADMIN", null);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(existingUser));
+
+        assertThatThrownBy(() -> userService.updateUser(1L, request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Invalid role");
     }
 }

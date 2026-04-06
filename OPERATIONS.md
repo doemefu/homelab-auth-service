@@ -33,6 +33,10 @@ No manual migration step is required. If a migration fails the service will refu
 kubectl logs -n apps deployment/auth-service | grep -i flyway
 ```
 
+Current migrations:
+- **V1** — Initial schema: `users` + `refresh_tokens` tables
+- **V2** — Widens `password_hash` to `VARCHAR(255)`, resizes `refresh_tokens.token` to `VARCHAR(64)` (SHA-256 hashes), converts all timestamps to `TIMESTAMPTZ`. Truncates existing refresh tokens (incompatible format after hashing change).
+
 **Never edit or delete existing `V*.sql` migration files.** Flyway checksums will fail.
 
 ---
@@ -47,6 +51,8 @@ kubectl logs -n apps deployment/auth-service | grep -i flyway
 | `APP_JWT_PUBLIC_KEY` | `file:/etc/secrets/public.pem` | RSA public key path (volume mount) |
 
 RSA keys are mounted from Secret `homelab-auth-rsa-keys` at `/etc/secrets/`.
+
+The K8s deployment uses image tag `:<git-sha>` (not `:latest`). Update `k8s/deployment.yaml` with the correct SHA from the CI build before applying.
 
 ---
 
@@ -73,7 +79,7 @@ RSA keys are mounted from Secret `homelab-auth-rsa-keys` at `/etc/secrets/`.
 
 4. **Side effects:**
    - All existing access tokens are immediately invalidated (new key cannot verify old signatures)
-   - Downstream services (device-service, data-service) cache the JWKS — they will pick up the new public key on their next JWKS fetch or pod restart
+   - Downstream services (device-service, data-service) cache the JWKS by `kid` — they will pick up the new public key on their next JWKS fetch or pod restart. If you change the `kid` value in the future, update `JwtService.KEY_ID`.
    - Consider revoking all refresh tokens: `DELETE FROM refresh_tokens;`
 
 ---
@@ -95,6 +101,20 @@ kubectl logs -n apps deployment/auth-service | grep -i "rsa\|key\|pem"
 kubectl get secret homelab-auth-rsa-keys -n apps
 kubectl describe pod -n apps -l app=auth-service | grep -A5 Mounts
 ```
+
+### Refresh tokens invalid after upgrade to V2 schema
+
+After deploying the V2 migration, all previously stored refresh tokens are invalidated because the service now SHA-256 hashes tokens before storage. Users will need to re-authenticate. This is expected and one-time.
+
+### Token cleanup scheduler not running
+
+`TokenCleanupScheduler` purges expired refresh tokens every hour. If the `refresh_tokens` table grows unbounded, verify the scheduler is active:
+
+```bash
+kubectl logs -n apps deployment/auth-service | grep -i "purge\|cleanup\|scheduler"
+```
+
+Ensure `@EnableScheduling` is active on `AuthServiceApplication`.
 
 ### JWT validation failures in device-service or data-service
 

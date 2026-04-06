@@ -5,7 +5,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 @Entity
 @Table(name = "refresh_tokens")
@@ -22,17 +22,17 @@ public class RefreshToken {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
-    @Column(nullable = false, unique = true, length = 2048)
+    @Column(nullable = false, unique = true, length = 64)
     private String token;
 
     @Column(name = "expires_at", nullable = false)
-    private LocalDateTime expiresAt;
+    private Instant expiresAt;
 
     @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 
     @PrePersist
     void onCreate() {
-        createdAt = LocalDateTime.now();
+        createdAt = Instant.now();
     }
 }
