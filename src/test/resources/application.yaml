@@ -2,16 +2,6 @@ spring:
   application:
     name: auth-service
 
-  test:
-    database:
-      replace: any
-
-  datasource:
-    url: jdbc:tc:postgresql:17:///testdb
-    username: test
-    password: test
-    driver-class-name: org.testcontainers.jdbc.ContainerDatabaseDriver
-
   jpa:
     hibernate:
       ddl-auto: validate
@@ -26,8 +16,8 @@ server:
 
 app:
   jwt:
-    private-key: classpath:keys/test_rsa_private.pem
-    public-key: classpath:keys/test_rsa_public.pem
+    private-key: classpath:keys/private.pem
+    public-key: classpath:keys/public.pem
     access-token-expiry: 900000
     refresh-token-expiry: 604800000
 
