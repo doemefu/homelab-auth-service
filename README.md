@@ -161,3 +161,13 @@ GitHub Actions workflow at `.github/workflows/build.yml`:
 - **build-and-push** job: builds a multi-arch image (`linux/amd64` + `linux/arm64`) and pushes to `ghcr.io/doemefu/homelab-auth-service:<git-sha>` — runs only on push to `main` after tests pass
 
 Image registry: `ghcr.io/doemefu/homelab-auth-service`
+
+---
+
+## Related Repositories
+
+| Repo | Description |
+|------|-------------|
+| [homelab](https://github.com/doemefu/homelab) | Infrastructure-as-Code — Ansible, K3s cluster, platform services (PostgreSQL, InfluxDB, Mosquitto) |
+| [homelab-device-service](https://github.com/doemefu/homelab-device-service) | Real-time IoT device management — MQTT subscriber, InfluxDB writer, WebSocket broadcast, scheduling |
+| homelab-data-service | Historical data queries (InfluxDB) + schedule CRUD (not yet created) |

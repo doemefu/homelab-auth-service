@@ -1,6 +1,7 @@
 package ch.furchert.homelab.auth.security;
 
 import ch.furchert.homelab.auth.config.RsaKeyProperties;
+import ch.furchert.homelab.auth.entity.Role;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
@@ -20,13 +21,13 @@ public class JwtService {
     private final RsaKeyProvider rsaKeyProvider;
     private final RsaKeyProperties rsaKeyProperties;
 
-    public String generateAccessToken(String username, String role) {
+    public String generateAccessToken(String username, Role role) {
         long now = System.currentTimeMillis();
         return Jwts.builder()
                 .header().keyId(KEY_ID).and()
                 .issuer(ISSUER)
                 .subject(username)
-                .claim(CLAIM_ROLE, role)
+                .claim(CLAIM_ROLE, role.name())
                 .issuedAt(new Date(now))
                 .expiration(new Date(now + rsaKeyProperties.getAccessTokenExpiry()))
                 .signWith(rsaKeyProvider.getPrivateKey())

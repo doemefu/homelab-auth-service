@@ -4,6 +4,7 @@ import ch.furchert.homelab.auth.dto.CreateUserRequest;
 import ch.furchert.homelab.auth.dto.ResetPasswordRequest;
 import ch.furchert.homelab.auth.dto.UpdateUserRequest;
 import ch.furchert.homelab.auth.dto.UserResponse;
+import ch.furchert.homelab.auth.entity.Role;
 import ch.furchert.homelab.auth.entity.User;
 import ch.furchert.homelab.auth.exception.ResourceNotFoundException;
 import ch.furchert.homelab.auth.repository.RefreshTokenRepository;
@@ -18,7 +19,6 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class UserService {
 
-    private static final java.util.Set<String> VALID_ROLES = java.util.Set.of("USER", "ADMIN");
     private static final java.util.Set<String> VALID_STATUSES = java.util.Set.of("ACTIVE", "INACTIVE");
 
     private final UserRepository userRepository;
@@ -34,10 +34,7 @@ public class UserService {
             throw new IllegalArgumentException("Email already registered: " + request.email());
         }
 
-        String role = request.role() != null ? request.role() : "USER";
-        if (!VALID_ROLES.contains(role)) {
-            throw new IllegalArgumentException("Invalid role: " + role);
-        }
+        Role role = request.role() != null ? request.role() : Role.USER;
 
         User user = new User();
         user.setUsername(request.username());
@@ -75,9 +72,6 @@ public class UserService {
             user.setEmail(request.email());
         }
         if (request.role() != null) {
-            if (!VALID_ROLES.contains(request.role())) {
-                throw new IllegalArgumentException("Invalid role: " + request.role());
-            }
             user.setRole(request.role());
         }
         if (request.status() != null) {
