@@ -1,6 +1,6 @@
 # homelab-auth-service
 
-JWT authentication service for the doemefu homelab IoT ecosystem.
+JWT authentication service for the doemefu homelab IoT ecosystem. 
 
 **Port:** 8080 | **Package:** `ch.furchert.homelab.auth` | **Database:** PostgreSQL
 
@@ -161,3 +161,5 @@ GitHub Actions workflow at `.github/workflows/build.yml`:
 - **build-and-push** job: builds a multi-arch image (`linux/amd64` + `linux/arm64`) and pushes to `ghcr.io/doemefu/homelab-auth-service:<git-sha>` — runs only on push to `main` after tests pass
 
 Image registry: `ghcr.io/doemefu/homelab-auth-service`
+
+
