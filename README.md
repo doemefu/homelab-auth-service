@@ -171,3 +171,5 @@ Image registry: `ghcr.io/doemefu/homelab-auth-service`
 | [homelab](https://github.com/doemefu/homelab) | Infrastructure-as-Code — Ansible, K3s cluster, platform services (PostgreSQL, InfluxDB, Mosquitto) |
 | [homelab-device-service](https://github.com/doemefu/homelab-device-service) | Real-time IoT device management — MQTT subscriber, InfluxDB writer, WebSocket broadcast, scheduling |
 | homelab-data-service | Historical data queries (InfluxDB) + schedule CRUD (not yet created) |
+
+Full architecture docs (migration plan, current/target architecture, cross-service contracts): [homelab/docs/](https://github.com/doemefu/homelab/tree/main/docs)
