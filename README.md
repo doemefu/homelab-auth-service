@@ -1,6 +1,6 @@
 # homelab-auth-service
 
-JWT authentication service for the doemefu homelab IoT ecosystem.
+JWT authentication service for the doemefu homelab IoT ecosystem. 
 
 **Port:** 8080 | **Package:** `ch.furchert.homelab.auth` | **Database:** PostgreSQL
 
