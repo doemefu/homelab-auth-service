@@ -18,6 +18,7 @@ spring:
 
 server:
   port: 8080
+  forward-headers-strategy: native
 
 app:
   jwt:
@@ -25,6 +26,23 @@ app:
     public-key: classpath:keys/public.pem
     access-token-expiry: 900000
     refresh-token-expiry: 604800000
+  oidc:
+    issuer: https://auth.furchert.ch
+    clients:
+      - client-id: grafana
+        client-secret: "${GRAFANA_CLIENT_SECRET}"
+        redirect-uris:
+          - https://grafana.furchert.ch/login/generic_oauth
+        post-logout-redirect-uris:
+          - https://grafana.furchert.ch
+        scopes: [openid, profile, email]
+      - client-id: homeassistant
+        client-secret: "${HA_CLIENT_SECRET}"
+        redirect-uris:
+          - https://ha.furchert.ch/auth/oidc/callback
+        post-logout-redirect-uris:
+          - https://ha.furchert.ch
+        scopes: [openid, profile, email]
 
 management:
   endpoints:

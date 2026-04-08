@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>furchert.ch — Sign in</title>
+    <style>
+        body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; background: #f5f5f5; }
+        .card { background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,.1); width: 100%; max-width: 360px; }
+        h1 { margin-top: 0; font-size: 1.4rem; }
+        input { display: block; width: 100%; padding: .5rem; margin: .5rem 0 1rem; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; font-size: 1rem; }
+        button { width: 100%; padding: .6rem; background: #1a73e8; color: white; border: none; border-radius: 4px; font-size: 1rem; cursor: pointer; }
+        button:hover { background: #1558b0; }
+        .error { color: #c0392b; margin-bottom: 1rem; }
+        .info  { color: #27ae60; margin-bottom: 1rem; }
+    </style>
+</head>
+<body>
+<div class="card">
+    <h1>furchert.ch</h1>
+    <p th:if="${param.error}" class="error">Invalid username or password.</p>
+    <p th:if="${param.logout}" class="info">You have been signed out.</p>
+    <form method="post" action="/login">
+        <label for="username">Username</label>
+        <input id="username" type="text"     name="username" autocomplete="username"     required autofocus/>
+        <label for="password">Password</label>
+        <input id="password" type="password" name="password" autocomplete="current-password" required/>
+        <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>
+        <button type="submit">Sign in</button>
+    </form>
+</div>
+</body>
+</html>

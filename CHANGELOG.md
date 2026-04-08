@@ -2,6 +2,39 @@
 
 ## [Unreleased]
 
+### Breaking
+
+- Direct auth API (`/api/v1/auth/**`) removed — login, refresh, logout, and JWKS are no longer served at these paths. Downstream services must update to the OIDC endpoints.
+
+### Added
+
+- OIDC Identity Provider via Spring Authorization Server — SSO for all furchert.ch homelab services
+- Authorization Code Flow with PKCE (`/oauth2/authorize`, `/oauth2/token`)
+- OIDC discovery document at `/.well-known/openid-configuration`
+- Login page at `/login` (form-based authentication)
+- JWKS endpoint at `/oauth2/jwks` (replaces `/api/v1/auth/jwks`)
+- UserInfo endpoint at `/userinfo`
+- RP-Initiated Logout at `/connect/logout`
+- Pre-configured OIDC clients: `grafana`, `home-assistant`
+- Flyway V3 migration: drops `refresh_tokens`, creates `oauth2_authorization` table for Spring Authorization Server
+
+### Changed
+
+- Token storage migrated from `refresh_tokens` table to `oauth2_authorization` table (Flyway V3)
+- `TokenCleanupScheduler` now purges expired `oauth2_authorization` records (was: `refresh_tokens`)
+- `server.forward-headers-strategy=native` required for correct issuer URL behind reverse proxy
+
+### Removed
+
+- jjwt dependency (`io.jsonwebtoken:jjwt-*`)
+- `RefreshToken` entity and `RefreshTokenRepository`
+- `JwtService`, `JwtAuthenticationFilter`, `TokenCleanupScheduler` (old implementations)
+- Proprietary auth endpoints: `POST /api/v1/auth/login`, `POST /api/v1/auth/refresh`, `POST /api/v1/auth/logout`, `GET /api/v1/auth/jwks`
+
+---
+
+## [0.1.0] — Initial release
+
 ### Added
 - Initial implementation of homelab-auth-service
 - JWT issuance and refresh using jjwt 0.12.6 + RSA key pair

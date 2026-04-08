@@ -1,3 +1,103 @@
+# DEPLOYMENT.md — homelab-auth-service
+
+This file covers auth-service-specific deployment notes. For general cluster deployment patterns (namespaces, Cloudflare Tunnel, Longhorn storage, resource limits), see the [homelab infrastructure docs](https://github.com/doemefu/homelab/tree/main/docs).
+
+---
+
+## Required K8s Secrets
+
+### Database credentials (existing)
+
+```bash
+kubectl create secret generic homelab-db-credentials -n apps \
+  --from-literal=username=<db-user> \
+  --from-literal=password=<db-pass>
+```
+
+### RSA key pair (existing)
+
+```bash
+kubectl create secret generic homelab-auth-rsa-keys -n apps \
+  --from-file=private.pem=<path-to-private.pem> \
+  --from-file=public.pem=<path-to-public.pem>
+```
+
+### OIDC client secrets (new — required for OIDC)
+
+Generate BCrypt hashes for client secrets (used in `application.yaml`):
+
+```bash
+htpasswd -bnBC 12 "" <plaintext-secret> | tr -d ':\n'
+```
+
+Create the K8s secret with plaintext values (Spring Authorization Server hashes them via `{bcrypt}` prefix in config):
+
+```bash
+kubectl create secret generic homelab-auth-secrets -n apps \
+  --from-literal=grafana-client-secret=<grafana-plaintext-secret> \
+  --from-literal=ha-client-secret=<ha-plaintext-secret>
+```
+
+These are referenced in `k8s/deployment.yaml` as:
+
+```yaml
+env:
+  - name: GRAFANA_CLIENT_SECRET
+    valueFrom:
+      secretKeyRef:
+        name: homelab-auth-secrets
+        key: grafana-client-secret
+  - name: HA_CLIENT_SECRET
+    valueFrom:
+      secretKeyRef:
+        name: homelab-auth-secrets
+        key: ha-client-secret
+```
+
+---
+
+## OIDC-Specific Deployment Notes
+
+### Issuer URL must match ingress hostname exactly
+
+`app.oidc.issuer` in `application.yaml` must equal the exact public URL of the service as seen by clients (e.g. `https://auth.furchert.ch`). A mismatch causes `iss` claim validation failures in all downstream OIDC clients.
+
+### Forward-headers strategy
+
+The service is deployed behind Cloudflare Tunnel / Traefik. Set in `application.yaml`:
+
+```yaml
+server:
+  forward-headers-strategy: native
+```
+
+Without this, Spring Authorization Server constructs issuer URLs using the internal cluster hostname instead of the public URL, breaking OIDC discovery.
+
+### Single-pod session limitation
+
+Spring Authorization Server stores sessions in memory (no Redis/database-backed session store). The service must run as a **single pod** (replicas: 1). Scaling to multiple replicas will cause login failures because session state is not shared across pods.
+
+If horizontal scaling is required in the future, add Spring Session with Redis/PostgreSQL backend before increasing replicas.
+
+---
+
+## Cloudflare Tunnel Ingress
+
+Add auth-service to the cloudflared ingress list in `infra/playbooks/40_platform.yml`:
+
+```yaml
+- hostname: auth.furchert.ch
+  service: http://auth-service.apps.svc.cluster.local:8080
+```
+
+Re-run the platform playbook to apply:
+
+```bash
+ansible-playbook infra/playbooks/40_platform.yml
+```
+
+---
+
 # APPS.md — App Deployment Guide
 
 ---

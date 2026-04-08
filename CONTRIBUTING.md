@@ -56,6 +56,39 @@ The service connects to database `homelabdb` on `localhost:5432` (default in `ap
 
 ---
 
+## Test with OIDC Flow
+
+To exercise the full OIDC login flow locally:
+
+1. Port-forward PostgreSQL from the cluster (see step 2 in Local Development Setup).
+
+2. Set env vars and start the service:
+   ```bash
+   export DB_USERNAME=homelab
+   export DB_PASSWORD=homelab
+   export GRAFANA_CLIENT_SECRET=local-dev-secret
+   export HA_CLIENT_SECRET=local-dev-secret
+   ./mvnw spring-boot:run
+   ```
+
+3. Open `http://localhost:8080/login` in your browser. You should see the login page.
+
+4. Log in with a user that exists in the cluster database. On success, Spring Authorization Server issues an authorization code and redirects to the configured redirect URI.
+
+5. To test the discovery document:
+   ```bash
+   curl -s http://localhost:8080/.well-known/openid-configuration | python3 -m json.tool
+   ```
+
+6. To test the JWKS endpoint:
+   ```bash
+   curl -s http://localhost:8080/oauth2/jwks | python3 -m json.tool
+   ```
+
+> **Note:** The `app.oidc.issuer` value in `application.yaml` must be set to `http://localhost:8080` for local testing. In cluster deployments it must match the public ingress URL exactly.
+
+---
+
 ## Test Structure
 
 | Location | Type | Dependencies |
@@ -76,7 +109,7 @@ The service connects to database `homelabdb` on `localhost:5432` (default in `ap
 - **`@WithMockUser` does not work** with `STATELESS` session policy and Spring Security 7's `SecurityContextHolderFilter`. Use `SecurityMockMvcRequestPostProcessors.user(...).roles(...)` as a request post-processor instead. For endpoints that resolve `@AuthenticationPrincipal String username`, use `authentication(new UsernamePasswordAuthenticationToken("username", ...))` so the principal is a plain `String` (matching what `JwtAuthenticationFilter` sets in production)
 - **`JwtAuthenticationFilter` must not be mocked** in `@WebMvcTest` — mock `JwtService` instead. `OncePerRequestFilter.doFilter()` is `final` so Mockito cannot intercept it; mocking the filter breaks the entire filter chain
 - **Timestamps** — all entity timestamps use `java.time.Instant` (mapped to PostgreSQL `TIMESTAMPTZ`). Do not use `LocalDateTime` for any new timestamp fields.
-- **Refresh tokens** — SHA-256 hashed (hex-encoded) before database storage. Integration tests that directly query `refresh_tokens` must compare against the hashed value, not the raw token string.
+- **OAuth2 storage** — Spring Authorization Server persists tokens in the `oauth2_authorization` table (Flyway V3). Do not reference the old `refresh_tokens` table in new code or tests.
 
 ---
 
@@ -87,8 +120,9 @@ All schema changes go through Flyway. Migration files are in `src/main/resources
 Current migrations:
 - **V1** — Initial schema: `users` + `refresh_tokens` tables
 - **V2** — Widens `password_hash` to `VARCHAR(255)`, resizes `refresh_tokens.token` to `VARCHAR(64)` for SHA-256 hashes, converts all timestamps to `TIMESTAMPTZ`
+- **V3** — Drops `refresh_tokens` table; creates `oauth2_authorization` table for Spring Authorization Server token storage
 
-New migrations should follow `V3__description.sql`.
+New migrations should follow `V4__description.sql`.
 
 Never edit or delete an existing migration file — Flyway checksums will fail on next startup.
 

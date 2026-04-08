@@ -36,8 +36,160 @@ kubectl logs -n apps deployment/auth-service | grep -i flyway
 Current migrations:
 - **V1** — Initial schema: `users` + `refresh_tokens` tables
 - **V2** — Widens `password_hash` to `VARCHAR(255)`, resizes `refresh_tokens.token` to `VARCHAR(64)` (SHA-256 hashes), converts all timestamps to `TIMESTAMPTZ`. Truncates existing refresh tokens (incompatible format after hashing change).
+- **V3** — Drops `refresh_tokens` table; creates `oauth2_authorization` table for Spring Authorization Server token storage.
 
 **Never edit or delete existing `V*.sql` migration files.** Flyway checksums will fail.
+
+---
+
+## Adding a New OIDC Client
+
+1. Generate a BCrypt hash of the client secret:
+   ```bash
+   htpasswd -bnBC 12 "" <your-secret> | tr -d ':\n'
+   ```
+
+2. Add the client configuration to `application.yaml` under `app.oidc.clients`:
+   ```yaml
+   app:
+     oidc:
+       clients:
+         my-new-client:
+           client-id: my-new-client
+           client-secret: "{bcrypt}<hash-from-step-1>"
+           redirect-uris:
+             - "https://my-app.furchert.ch/login/oauth2/code/auth-service"
+           scopes:
+             - openid
+             - profile
+             - email
+   ```
+
+3. Add the plaintext secret as a K8s Secret env var:
+   ```bash
+   kubectl patch secret homelab-auth-secrets -n apps \
+     --type merge \
+     -p '{"stringData":{"MY_NEW_CLIENT_SECRET":"<plaintext-secret>"}}'
+   ```
+   Then reference it in `k8s/deployment.yaml` under `env`.
+
+4. Restart the pod:
+   ```bash
+   kubectl rollout restart deployment/auth-service -n apps
+   kubectl rollout status deployment/auth-service -n apps
+   ```
+
+---
+
+## Rotating a Client Secret
+
+1. Generate a new BCrypt hash:
+   ```bash
+   htpasswd -bnBC 12 "" <new-secret> | tr -d ':\n'
+   ```
+
+2. Update `application.yaml` with the new `{bcrypt}<hash>` value for the client.
+
+3. Update the K8s Secret with the new plaintext value:
+   ```bash
+   kubectl patch secret homelab-auth-secrets -n apps \
+     --type merge \
+     -p '{"stringData":{"GRAFANA_CLIENT_SECRET":"<new-plaintext-secret>"}}'
+   ```
+
+4. Restart the pod:
+   ```bash
+   kubectl rollout restart deployment/auth-service -n apps
+   ```
+
+After restart, update the client configuration in the consuming service (Grafana, Home Assistant, etc.) to use the new secret.
+
+---
+
+## Integrating a Service with furchert.ch SSO
+
+Use the OIDC discovery document to configure any OIDC-compatible client:
+
+| Value | Description |
+|-------|-------------|
+| Discovery URL | `https://auth.furchert.ch/.well-known/openid-configuration` |
+| Issuer | `https://auth.furchert.ch` |
+| Client ID | assigned per client (e.g. `grafana`, `home-assistant`) |
+| Client Secret | set via env var; obtain from operator |
+| Scopes | `openid profile email` |
+| Grant type | Authorization Code with PKCE |
+
+### Grafana
+
+Add to `grafana.ini` (or equivalent environment variables):
+
+```ini
+[auth.generic_oauth]
+enabled = true
+name = Homelab SSO
+icon = signin
+client_id = grafana
+client_secret = ${GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET}
+scopes = openid profile email
+auth_url = https://auth.furchert.ch/oauth2/authorize
+token_url = https://auth.furchert.ch/oauth2/token
+api_url = https://auth.furchert.ch/userinfo
+use_pkce = true
+role_attribute_path = contains(roles[*], 'ADMIN') && 'Admin' || 'Viewer'
+```
+
+Set the env var in K8s:
+```bash
+kubectl patch secret grafana-secret -n monitoring \
+  --type merge \
+  -p '{"stringData":{"GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET":"<plaintext-secret>"}}'
+```
+
+### Home Assistant
+
+In `configuration.yaml`:
+
+```yaml
+homeassistant:
+  auth_providers:
+    - type: homeassistant
+
+http:
+  use_x_forwarded_for: true
+  trusted_proxies:
+    - 10.0.0.0/8
+
+oidc:
+  discovery_url: https://auth.furchert.ch/.well-known/openid-configuration
+  client_id: home-assistant
+  client_secret: !secret ha_oidc_client_secret
+  scopes:
+    - openid
+    - profile
+    - email
+```
+
+Add `ha_oidc_client_secret: <plaintext-secret>` to `secrets.yaml`.
+
+### Other Services (template)
+
+For any Spring Boot service using `spring-boot-starter-oauth2-client`:
+
+```yaml
+spring:
+  security:
+    oauth2:
+      client:
+        registration:
+          auth-service:
+            client-id: my-service
+            client-secret: ${MY_SERVICE_CLIENT_SECRET}
+            authorization-grant-type: authorization_code
+            scope: openid,profile,email
+        provider:
+          auth-service:
+            issuer-uri: https://auth.furchert.ch
+```
 
 ---
 
@@ -49,6 +201,8 @@ Current migrations:
 | `DB_PASSWORD` | Secret `homelab-db-credentials` / key `password` | PostgreSQL password |
 | `APP_JWT_PRIVATE_KEY` | `file:/etc/secrets/private.pem` | RSA private key path (volume mount) |
 | `APP_JWT_PUBLIC_KEY` | `file:/etc/secrets/public.pem` | RSA public key path (volume mount) |
+| `GRAFANA_CLIENT_SECRET` | Secret `homelab-auth-secrets` / key `grafana-client-secret` | Grafana OIDC client secret (plaintext) |
+| `HA_CLIENT_SECRET` | Secret `homelab-auth-secrets` / key `ha-client-secret` | Home Assistant OIDC client secret (plaintext) |
 
 RSA keys are mounted from Secret `homelab-auth-rsa-keys` at `/etc/secrets/`.
 
@@ -102,13 +256,9 @@ kubectl get secret homelab-auth-rsa-keys -n apps
 kubectl describe pod -n apps -l app=auth-service | grep -A5 Mounts
 ```
 
-### Refresh tokens invalid after upgrade to V2 schema
+### OAuth2 authorization cleanup scheduler not running
 
-After deploying the V2 migration, all previously stored refresh tokens are invalidated because the service now SHA-256 hashes tokens before storage. Users will need to re-authenticate. This is expected and one-time.
-
-### Token cleanup scheduler not running
-
-`TokenCleanupScheduler` purges expired refresh tokens every hour. If the `refresh_tokens` table grows unbounded, verify the scheduler is active:
+`TokenCleanupScheduler` purges expired OAuth2 authorizations from the `oauth2_authorization` table every hour. If the table grows unbounded, verify the scheduler is active:
 
 ```bash
 kubectl logs -n apps deployment/auth-service | grep -i "purge\|cleanup\|scheduler"
@@ -118,11 +268,21 @@ Ensure `@EnableScheduling` is active on `AuthServiceApplication`.
 
 ### JWT validation failures in device-service or data-service
 
-Downstream services fetch the JWKS from `http://auth-service.apps.svc.cluster.local:8080/api/v1/auth/jwks`.
+Downstream services fetch the JWKS from `http://auth-service.apps.svc.cluster.local:8080/oauth2/jwks`.
 
 Verify the endpoint is reachable from within the cluster:
 
 ```bash
 kubectl run -n apps curl-test --image=curlimages/curl --restart=Never --rm -it -- \
-  curl -s http://auth-service.apps.svc.cluster.local:8080/api/v1/auth/jwks
+  curl -s http://auth-service.apps.svc.cluster.local:8080/oauth2/jwks
 ```
+
+### OIDC login page not reachable / redirect loop
+
+Check that `app.oidc.issuer` in `application.yaml` matches the exact public hostname used by the client. A mismatch causes token validation to fail with `iss` claim errors.
+
+```bash
+kubectl logs -n apps deployment/auth-service | grep -i "issuer\|oidc\|oauth2"
+```
+
+Also verify `server.forward-headers-strategy=native` is set — the issuer URL is constructed from the `X-Forwarded-*` headers injected by Cloudflare Tunnel / Traefik.

@@ -7,7 +7,6 @@ import ch.furchert.homelab.auth.dto.UserResponse;
 import ch.furchert.homelab.auth.entity.Role;
 import ch.furchert.homelab.auth.entity.User;
 import ch.furchert.homelab.auth.exception.ResourceNotFoundException;
-import ch.furchert.homelab.auth.repository.RefreshTokenRepository;
 import ch.furchert.homelab.auth.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;
@@ -22,7 +21,6 @@ public class UserService {
     private static final java.util.Set<String> VALID_STATUSES = java.util.Set.of("ACTIVE", "INACTIVE");
 
     private final UserRepository userRepository;
-    private final RefreshTokenRepository refreshTokenRepository;
     private final PasswordEncoder passwordEncoder;
 
     @Transactional
@@ -56,14 +54,12 @@ public class UserService {
     @Transactional
     public UserResponse updateUser(Long id, UpdateUserRequest request) {
         User user = findById(id);
-        boolean usernameChanged = false;
 
         if (request.username() != null && !request.username().equals(user.getUsername())) {
             if (userRepository.existsByUsername(request.username())) {
                 throw new IllegalArgumentException("Username already taken: " + request.username());
             }
             user.setUsername(request.username());
-            usernameChanged = true;
         }
         if (request.email() != null && !request.email().equals(user.getEmail())) {
             if (userRepository.existsByEmail(request.email())) {
@@ -81,14 +77,7 @@ public class UserService {
             user.setStatus(request.status());
         }
 
-        UserResponse response = UserResponse.from(userRepository.save(user));
-
-        // Invalidate all refresh tokens when username changes — existing JWTs use old username as sub
-        if (usernameChanged) {
-            refreshTokenRepository.deleteByUser(user);
-        }
-
-        return response;
+        return UserResponse.from(userRepository.save(user));
     }
 
     @Transactional
@@ -117,9 +106,6 @@ public class UserService {
 
         user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
         userRepository.save(user);
-
-        // Invalidate all refresh tokens — password change should require re-authentication
-        refreshTokenRepository.deleteByUser(user);
     }
 
     private User findById(Long id) {
