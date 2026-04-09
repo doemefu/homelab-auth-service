@@ -37,6 +37,11 @@ spec:
               value: "file:/etc/secrets/private.pem"
             - name: APP_JWT_PUBLIC_KEY
               value: "file:/etc/secrets/public.pem"
+            - name: SENTRY_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: sentry-dsn
+                  key: dsn
           volumeMounts:
             - name: rsa-keys
               mountPath: /etc/secrets
