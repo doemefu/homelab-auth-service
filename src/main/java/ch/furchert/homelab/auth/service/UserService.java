@@ -7,9 +7,9 @@ import ch.furchert.homelab.auth.dto.UserResponse;
 import ch.furchert.homelab.auth.entity.Role;
 import ch.furchert.homelab.auth.entity.User;
 import ch.furchert.homelab.auth.exception.ResourceNotFoundException;
-import ch.furchert.homelab.auth.repository.RefreshTokenRepository;
 import ch.furchert.homelab.auth.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -22,8 +22,8 @@ public class UserService {
     private static final java.util.Set<String> VALID_STATUSES = java.util.Set.of("ACTIVE", "INACTIVE");
 
     private final UserRepository userRepository;
-    private final RefreshTokenRepository refreshTokenRepository;
     private final PasswordEncoder passwordEncoder;
+    private final JdbcTemplate jdbcTemplate;
 
     @Transactional
     public UserResponse createUser(CreateUserRequest request) {
@@ -56,14 +56,16 @@ public class UserService {
     @Transactional
     public UserResponse updateUser(Long id, UpdateUserRequest request) {
         User user = findById(id);
-        boolean usernameChanged = false;
 
         if (request.username() != null && !request.username().equals(user.getUsername())) {
             if (userRepository.existsByUsername(request.username())) {
                 throw new IllegalArgumentException("Username already taken: " + request.username());
             }
+            // Revoke all active sessions for the old username before renaming.
+            // oauth2_authorization rows are keyed by principal_name — any refresh tokens
+            // issued under the old name would otherwise remain usable after the rename.
+            revokeAuthorizations(user.getUsername());
             user.setUsername(request.username());
-            usernameChanged = true;
         }
         if (request.email() != null && !request.email().equals(user.getEmail())) {
             if (userRepository.existsByEmail(request.email())) {
@@ -81,14 +83,7 @@ public class UserService {
             user.setStatus(request.status());
         }
 
-        UserResponse response = UserResponse.from(userRepository.save(user));
-
-        // Invalidate all refresh tokens when username changes — existing JWTs use old username as sub
-        if (usernameChanged) {
-            refreshTokenRepository.deleteByUser(user);
-        }
-
-        return response;
+        return UserResponse.from(userRepository.save(user));
     }
 
     @Transactional
@@ -117,13 +112,20 @@ public class UserService {
 
         user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
         userRepository.save(user);
-
-        // Invalidate all refresh tokens — password change should require re-authentication
-        refreshTokenRepository.deleteByUser(user);
+        // Force re-authentication: revoke all active OAuth2 authorizations (including
+        // refresh tokens) so the user must log in again with the new password.
+        revokeAuthorizations(user.getUsername());
     }
 
     private User findById(Long id) {
         return userRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + id));
+    }
+
+    private void revokeAuthorizations(String principalName) {
+        jdbcTemplate.update(
+                "DELETE FROM oauth2_authorization WHERE principal_name = ?", principalName);
+        jdbcTemplate.update(
+                "DELETE FROM oauth2_authorization_consent WHERE principal_name = ?", principalName);
     }
 }

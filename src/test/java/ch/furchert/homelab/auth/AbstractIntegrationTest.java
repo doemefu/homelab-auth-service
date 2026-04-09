@@ -21,5 +21,13 @@ public abstract class AbstractIntegrationTest {
         registry.add("spring.datasource.url", postgres::getJdbcUrl);
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
+        registry.add("app.oidc.issuer", () -> "https://auth.test.local");
+        registry.add("app.oidc.clients[0].client-id", () -> "test-client");
+        registry.add("app.oidc.clients[0].client-secret", () -> "{noop}test-secret");
+        registry.add("app.oidc.clients[0].redirect-uris[0]", () -> "https://app.test.local/callback");
+        registry.add("app.oidc.clients[0].post-logout-redirect-uris[0]", () -> "https://app.test.local");
+        registry.add("app.oidc.clients[0].scopes[0]", () -> "openid");
+        registry.add("app.oidc.clients[0].scopes[1]", () -> "profile");
+        registry.add("app.oidc.clients[0].scopes[2]", () -> "email");
     }
 }
