@@ -4,8 +4,8 @@ import ch.furchert.homelab.auth.config.SecurityConfig;
 import ch.furchert.homelab.auth.dto.CreateUserRequest;
 import ch.furchert.homelab.auth.dto.UpdateUserRequest;
 import ch.furchert.homelab.auth.dto.UserResponse;
+import ch.furchert.homelab.auth.entity.Role;
 import ch.furchert.homelab.auth.exception.ResourceNotFoundException;
-import ch.furchert.homelab.auth.security.JwtService;
 import ch.furchert.homelab.auth.service.UserService;
 import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -13,13 +13,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.Instant;
-import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -39,7 +38,7 @@ class UserControllerTest {
     ObjectMapper objectMapper;
 
     @MockitoBean
-    JwtService jwtService;
+    JwtDecoder jwtDecoder;
 
     @MockitoBean
     UserService userService;
@@ -54,11 +53,10 @@ class UserControllerTest {
         when(userService.createUser(any())).thenReturn(sampleUser());
 
         mockMvc.perform(post("/api/v1/users")
-                        .with(user("admin").roles("ADMIN"))
+                        .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                new CreateUserRequest("testuser", "test@example.com", "password123", "USER")))
-                        .with(csrf()))
+                                new CreateUserRequest("testuser", "test@example.com", "password123", Role.USER))))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.username").value("testuser"));
     }
@@ -66,11 +64,10 @@ class UserControllerTest {
     @Test
     void createUser_asUser_returns403() throws Exception {
         mockMvc.perform(post("/api/v1/users")
-                        .with(user("normaluser").roles("USER"))
+                        .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_USER")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                new CreateUserRequest("testuser", "test@example.com", "password123", "USER")))
-                        .with(csrf()))
+                                new CreateUserRequest("testuser", "test@example.com", "password123", Role.USER))))
                 .andExpect(status().isForbidden());
     }
 
@@ -79,30 +76,26 @@ class UserControllerTest {
         mockMvc.perform(post("/api/v1/users")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                new CreateUserRequest("testuser", "test@example.com", "password123", "USER")))
-                        .with(csrf()))
+                                new CreateUserRequest("testuser", "test@example.com", "password123", Role.USER))))
                 .andExpect(status().isUnauthorized());
     }
 
     @Test
     void createUser_withInvalidEmail_returns400() throws Exception {
         mockMvc.perform(post("/api/v1/users")
-                        .with(user("admin").roles("ADMIN"))
+                        .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN")))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"username\":\"u\",\"email\":\"not-an-email\",\"password\":\"password123\"}")
-                        .with(csrf()))
+                        .content("{\"username\":\"u\",\"email\":\"not-an-email\",\"password\":\"password123\"}"))
                 .andExpect(status().isBadRequest());
     }
 
     @Test
     void getUser_asOwner_returns200() throws Exception {
-        // Principal must be a plain String to match @AuthenticationPrincipal String username
-        UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
-                "testuser", null, List.of(new SimpleGrantedAuthority("ROLE_USER")));
         when(userService.getUser(1L, "testuser", false)).thenReturn(sampleUser());
 
         mockMvc.perform(get("/api/v1/users/1")
-                        .with(authentication(auth)))
+                        .with(jwt().jwt(j -> j.subject("testuser"))
+                                   .authorities(new SimpleGrantedAuthority("ROLE_USER"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.username").value("testuser"));
     }
@@ -113,7 +106,7 @@ class UserControllerTest {
                 .thenThrow(new ResourceNotFoundException("User not found: 99"));
 
         mockMvc.perform(get("/api/v1/users/99")
-                        .with(user("admin").roles("ADMIN")))
+                        .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN"))))
                 .andExpect(status().isNotFound());
     }
 
@@ -122,11 +115,10 @@ class UserControllerTest {
         when(userService.updateUser(eq(1L), any())).thenReturn(sampleUser());
 
         mockMvc.perform(put("/api/v1/users/1")
-                        .with(user("admin").roles("ADMIN"))
+                        .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                new UpdateUserRequest("newname", null, null, null)))
-                        .with(csrf()))
+                                new UpdateUserRequest("newname", null, null, null))))
                 .andExpect(status().isOk());
     }
 
@@ -135,16 +127,14 @@ class UserControllerTest {
         doNothing().when(userService).deleteUser(1L);
 
         mockMvc.perform(delete("/api/v1/users/1")
-                        .with(user("admin").roles("ADMIN"))
-                        .with(csrf()))
+                        .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN"))))
                 .andExpect(status().isNoContent());
     }
 
     @Test
     void deleteUser_asUser_returns403() throws Exception {
         mockMvc.perform(delete("/api/v1/users/1")
-                        .with(user("normaluser").roles("USER"))
-                        .with(csrf()))
+                        .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_USER"))))
                 .andExpect(status().isForbidden());
     }
 }
