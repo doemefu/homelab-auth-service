@@ -20,8 +20,6 @@ import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.Base64;
 
-import org.springframework.web.util.UriComponentsBuilder;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -184,16 +182,17 @@ class OidcFlowIntegrationTest extends AbstractIntegrationTest {
     // --- helpers ---
 
     private static String buildAuthorizeUrl(String codeChallenge) {
-        return UriComponentsBuilder.fromPath("/oauth2/authorize")
-                .queryParam("response_type", "code")
-                .queryParam("client_id", "test-client")
-                .queryParam("redirect_uri", "https://app.test.local/callback")
-                .queryParam("scope", "openid profile email")
-                .queryParam("state", "test-state")
-                .queryParam("code_challenge", codeChallenge)
-                .queryParam("code_challenge_method", "S256")
-                .build()
-                .toUriString();
+        // Build URL as a plain string so that query parameters land in the raw
+        // query string where Spring Authorization Server can read them.
+        // Use '+' for spaces in scope (standard application/x-www-form-urlencoded).
+        return "/oauth2/authorize"
+                + "?response_type=code"
+                + "&client_id=test-client"
+                + "&redirect_uri=https://app.test.local/callback"
+                + "&scope=openid+profile+email"
+                + "&state=test-state"
+                + "&code_challenge=" + codeChallenge
+                + "&code_challenge_method=S256";
     }
 
     private static String generateCodeVerifier() {
