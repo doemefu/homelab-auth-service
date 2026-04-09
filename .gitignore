@@ -37,7 +37,6 @@ build/
 
 ### RSA keys (local dev only) ###
 src/main/resources/keys/
-src/test/resources/keys/
 
 ### Environment ###
 .env
@@ -84,3 +83,7 @@ replay_pid*
 # Test coverage
 coverage/
 .coverage
+
+# Test RSA keys are tracked — not real credentials
+!src/test/resources/keys/
+!src/test/resources/keys/*.pem
