@@ -14,6 +14,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
@@ -32,6 +33,8 @@ class UserServiceTest {
     private UserRepository userRepository;
     @Mock
     private PasswordEncoder passwordEncoder;
+    @Mock
+    private JdbcTemplate jdbcTemplate;
 
     @InjectMocks
     private UserService userService;
@@ -133,6 +136,9 @@ class UserServiceTest {
 
         assertThat(response).isNotNull();
         verify(userRepository).save(any(User.class));
+        // Authorizations for the old username must be revoked before the rename
+        verify(jdbcTemplate).update("DELETE FROM oauth2_authorization WHERE principal_name = ?", "testuser");
+        verify(jdbcTemplate).update("DELETE FROM oauth2_authorization_consent WHERE principal_name = ?", "testuser");
     }
 
     @Test
@@ -175,6 +181,9 @@ class UserServiceTest {
 
         verify(passwordEncoder).encode("newpassword123");
         verify(userRepository).save(existingUser);
+        // All active OAuth2 authorizations must be revoked on password reset
+        verify(jdbcTemplate).update("DELETE FROM oauth2_authorization WHERE principal_name = ?", "testuser");
+        verify(jdbcTemplate).update("DELETE FROM oauth2_authorization_consent WHERE principal_name = ?", "testuser");
     }
 
     @Test
@@ -188,6 +197,8 @@ class UserServiceTest {
         userService.resetPassword(1L, request, "testuser", false);
 
         verify(passwordEncoder).encode("newpassword123");
+        verify(jdbcTemplate).update("DELETE FROM oauth2_authorization WHERE principal_name = ?", "testuser");
+        verify(jdbcTemplate).update("DELETE FROM oauth2_authorization_consent WHERE principal_name = ?", "testuser");
     }
 
     @Test
@@ -221,6 +232,7 @@ class UserServiceTest {
         userService.resetPassword(1L, request, "admin", true);
 
         verify(userRepository).save(existingUser);
+        verify(jdbcTemplate).update("DELETE FROM oauth2_authorization WHERE principal_name = ?", "testuser");
     }
 
 }

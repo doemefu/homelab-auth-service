@@ -108,8 +108,8 @@ export DB_PASSWORD=homelab
 | `app.jwt.private-key` | `APP_JWT_PRIVATE_KEY` | `classpath:keys/private.pem` |
 | `app.jwt.public-key` | `APP_JWT_PUBLIC_KEY` | `classpath:keys/public.pem` |
 | `app.oidc.issuer` | — | — (required; must match the public ingress URL exactly) |
-| `app.oidc.clients.grafana.client-secret` | `GRAFANA_CLIENT_SECRET` | — (required) |
-| `app.oidc.clients.home-assistant.client-secret` | `HA_CLIENT_SECRET` | — (required) |
+| `app.oidc.clients[0].client-secret` | `GRAFANA_CLIENT_SECRET` | — (required; must include `{id}` prefix, e.g. `{noop}secret`) |
+| `app.oidc.clients[1].client-secret` | `HA_CLIENT_SECRET` | — (required; must include `{id}` prefix, e.g. `{noop}secret`) |
 
 Expired OAuth2 authorizations are automatically purged every hour by `TokenCleanupScheduler`. No additional configuration required.
 

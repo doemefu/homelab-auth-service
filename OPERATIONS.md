@@ -36,7 +36,8 @@ kubectl logs -n apps deployment/auth-service | grep -i flyway
 Current migrations:
 - **V1** — Initial schema: `users` + `refresh_tokens` tables
 - **V2** — Widens `password_hash` to `VARCHAR(255)`, resizes `refresh_tokens.token` to `VARCHAR(64)` (SHA-256 hashes), converts all timestamps to `TIMESTAMPTZ`. Truncates existing refresh tokens (incompatible format after hashing change).
-- **V3** — Drops `refresh_tokens` table; creates `oauth2_authorization` table for Spring Authorization Server token storage.
+- **V3** — Creates `oauth2_authorization` and `oauth2_authorization_consent` tables for Spring Authorization Server token storage.
+- **V4** — Drops the legacy `refresh_tokens` table.
 
 **Never edit or delete existing `V*.sql` migration files.** Flyway checksums will fail.
 
@@ -44,19 +45,30 @@ Current migrations:
 
 ## Adding a New OIDC Client
 
-1. Generate a BCrypt hash of the client secret:
-   ```bash
-   htpasswd -bnBC 12 "" <your-secret> | tr -d ':\n'
-   ```
+1. Choose a client secret and prepare the encoded value for the K8s Secret.
+   The env var must contain the full Spring Security encoded form:
+   - Simplest (homelab): `{noop}<plaintext>` — no hashing, verified as-is
+   - More secure: `{bcrypt}<bcrypt-hash>` — generate the hash with:
+     ```bash
+     htpasswd -bnBC 12 "" <your-secret> | tr -d ':\n'
+     # prefix the output: {bcrypt}$2a$12$...
+     ```
 
-2. Add the client configuration to `application.yaml` under `app.oidc.clients`:
+2. Store the encoded secret in a K8s Secret env var:
+   ```bash
+   kubectl patch secret homelab-auth-secrets -n apps \
+     --type merge \
+     -p '{"stringData":{"MY_NEW_CLIENT_SECRET":"{noop}<plaintext-secret>"}}'
+   ```
+   Then reference it in `k8s/deployment.yaml` under `env` as `MY_NEW_CLIENT_SECRET`.
+
+3. Add the client configuration to `application.yaml` under `app.oidc.clients` (list format):
    ```yaml
    app:
      oidc:
        clients:
-         my-new-client:
-           client-id: my-new-client
-           client-secret: "{bcrypt}<hash-from-step-1>"
+         - client-id: my-new-client
+           client-secret: "${MY_NEW_CLIENT_SECRET}"
            redirect-uris:
              - "https://my-app.furchert.ch/login/oauth2/code/auth-service"
            scopes:
@@ -64,14 +76,6 @@ Current migrations:
              - profile
              - email
    ```
-
-3. Add the plaintext secret as a K8s Secret env var:
-   ```bash
-   kubectl patch secret homelab-auth-secrets -n apps \
-     --type merge \
-     -p '{"stringData":{"MY_NEW_CLIENT_SECRET":"<plaintext-secret>"}}'
-   ```
-   Then reference it in `k8s/deployment.yaml` under `env`.
 
 4. Restart the pod:
    ```bash
@@ -83,18 +87,21 @@ Current migrations:
 
 ## Rotating a Client Secret
 
-1. Generate a new BCrypt hash:
+1. Prepare the new encoded secret (the env var must include the `{id}` prefix):
    ```bash
+   # Simplest — no hashing:
+   # value to store: {noop}<new-plaintext-secret>
+   #
+   # More secure — BCrypt hash:
    htpasswd -bnBC 12 "" <new-secret> | tr -d ':\n'
+   # prefix the output: {bcrypt}$2a$12$...
    ```
 
-2. Update `application.yaml` with the new `{bcrypt}<hash>` value for the client.
-
-3. Update the K8s Secret with the new plaintext value:
+2. Update the K8s Secret with the new encoded value:
    ```bash
    kubectl patch secret homelab-auth-secrets -n apps \
      --type merge \
-     -p '{"stringData":{"GRAFANA_CLIENT_SECRET":"<new-plaintext-secret>"}}'
+     -p '{"stringData":{"GRAFANA_CLIENT_SECRET":"{noop}<new-plaintext-secret>"}}'
    ```
 
 4. Restart the pod:
@@ -135,7 +142,7 @@ auth_url = https://auth.furchert.ch/oauth2/authorize
 token_url = https://auth.furchert.ch/oauth2/token
 api_url = https://auth.furchert.ch/userinfo
 use_pkce = true
-role_attribute_path = contains(roles[*], 'ADMIN') && 'Admin' || 'Viewer'
+role_attribute_path = role == 'ADMIN' && 'Admin' || 'Viewer'
 ```
 
 Set the env var in K8s:

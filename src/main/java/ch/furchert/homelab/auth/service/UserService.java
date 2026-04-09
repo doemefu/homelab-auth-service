@@ -9,6 +9,7 @@ import ch.furchert.homelab.auth.entity.User;
 import ch.furchert.homelab.auth.exception.ResourceNotFoundException;
 import ch.furchert.homelab.auth.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -22,6 +23,7 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final JdbcTemplate jdbcTemplate;
 
     @Transactional
     public UserResponse createUser(CreateUserRequest request) {
@@ -59,6 +61,10 @@ public class UserService {
             if (userRepository.existsByUsername(request.username())) {
                 throw new IllegalArgumentException("Username already taken: " + request.username());
             }
+            // Revoke all active sessions for the old username before renaming.
+            // oauth2_authorization rows are keyed by principal_name — any refresh tokens
+            // issued under the old name would otherwise remain usable after the rename.
+            revokeAuthorizations(user.getUsername());
             user.setUsername(request.username());
         }
         if (request.email() != null && !request.email().equals(user.getEmail())) {
@@ -106,10 +112,20 @@ public class UserService {
 
         user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
         userRepository.save(user);
+        // Force re-authentication: revoke all active OAuth2 authorizations (including
+        // refresh tokens) so the user must log in again with the new password.
+        revokeAuthorizations(user.getUsername());
     }
 
     private User findById(Long id) {
         return userRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + id));
+    }
+
+    private void revokeAuthorizations(String principalName) {
+        jdbcTemplate.update(
+                "DELETE FROM oauth2_authorization WHERE principal_name = ?", principalName);
+        jdbcTemplate.update(
+                "DELETE FROM oauth2_authorization_consent WHERE principal_name = ?", principalName);
     }
 }

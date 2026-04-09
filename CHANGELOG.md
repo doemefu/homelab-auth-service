@@ -16,19 +16,25 @@
 - UserInfo endpoint at `/userinfo`
 - RP-Initiated Logout at `/connect/logout`
 - Pre-configured OIDC clients: `grafana`, `home-assistant`
-- Flyway V3 migration: drops `refresh_tokens`, creates `oauth2_authorization` table for Spring Authorization Server
+- Flyway V3 migration: creates `oauth2_authorization` and `oauth2_authorization_consent` tables for Spring Authorization Server
+- Flyway V4 migration: drops legacy `refresh_tokens` table
 
 ### Changed
 
 - Token storage migrated from `refresh_tokens` table to `oauth2_authorization` table (Flyway V3)
 - `TokenCleanupScheduler` now purges expired `oauth2_authorization` records (was: `refresh_tokens`)
 - `server.forward-headers-strategy=native` required for correct issuer URL behind reverse proxy
+- Username change and password reset now revoke all active OAuth2 authorizations, requiring re-authentication
+- `PasswordEncoder` switched to `DelegatingPasswordEncoder` to support `{noop}`/`{bcrypt}` prefixes for OIDC client secrets
+- API filter chain is now stateless (no sessions); login form uses a separate stateful filter chain
+- OIDC client secret env vars must include the Spring Security `{id}` prefix (e.g. `{noop}secret`)
 
 ### Removed
 
 - jjwt dependency (`io.jsonwebtoken:jjwt-*`)
 - `RefreshToken` entity and `RefreshTokenRepository`
-- `JwtService`, `JwtAuthenticationFilter`, `TokenCleanupScheduler` (old implementations)
+- `JwtService`, `JwtAuthenticationFilter`
+- Proprietary `TokenCleanupScheduler` (replaced by a new scheduler purging `oauth2_authorization`)
 - Proprietary auth endpoints: `POST /api/v1/auth/login`, `POST /api/v1/auth/refresh`, `POST /api/v1/auth/logout`, `GET /api/v1/auth/jwks`
 
 ---

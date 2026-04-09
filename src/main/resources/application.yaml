@@ -30,6 +30,7 @@ app:
     issuer: https://auth.furchert.ch
     clients:
       - client-id: grafana
+        # The env var must include the Spring Security {id} prefix, e.g. "{noop}secret" or "{bcrypt}$2a$...".
         client-secret: "${GRAFANA_CLIENT_SECRET}"
         redirect-uris:
           - https://grafana.furchert.ch/login/generic_oauth
@@ -37,6 +38,7 @@ app:
           - https://grafana.furchert.ch
         scopes: [openid, profile, email]
       - client-id: homeassistant
+        # The env var must include the Spring Security {id} prefix, e.g. "{noop}secret" or "{bcrypt}$2a$...".
         client-secret: "${HA_CLIENT_SECRET}"
         redirect-uris:
           - https://ha.furchert.ch/auth/oidc/callback

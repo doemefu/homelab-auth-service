@@ -12,6 +12,9 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
@@ -134,9 +137,10 @@ class OidcFlowIntegrationTest extends AbstractIntegrationTest {
             .andExpect(jsonPath("$.token_type").value("Bearer"))
             .andReturn();
 
-        String responseBody = tokenResult.getResponse().getContentAsString();
-        String accessToken = extractJsonField(responseBody, "access_token");
-        String idToken = extractJsonField(responseBody, "id_token");
+        JsonNode tokenResponse = new ObjectMapper().readTree(
+                tokenResult.getResponse().getContentAsString());
+        String accessToken = tokenResponse.get("access_token").asText();
+        String idToken = tokenResponse.get("id_token").asText();
         assertThat(accessToken).isNotEmpty();
 
         // Verify role claim in id_token payload
@@ -209,12 +213,4 @@ class OidcFlowIntegrationTest extends AbstractIntegrationTest {
         throw new IllegalArgumentException("Param " + param + " not found in: " + url);
     }
 
-    private static String extractJsonField(String json, String field) {
-        String key = "\"" + field + "\":\"";
-        int start = json.indexOf(key);
-        if (start == -1) throw new IllegalArgumentException("Field " + field + " not found in: " + json);
-        start += key.length();
-        int end = json.indexOf("\"", start);
-        return json.substring(start, end);
-    }
 }

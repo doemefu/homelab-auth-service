@@ -30,12 +30,22 @@ Generate BCrypt hashes for client secrets (used in `application.yaml`):
 htpasswd -bnBC 12 "" <plaintext-secret> | tr -d ':\n'
 ```
 
-Create the K8s secret with plaintext values (Spring Authorization Server hashes them via `{bcrypt}` prefix in config):
+The `client-secret` value in `application.yaml` is read directly from the env var by Spring Authorization
+Server and matched using the configured `PasswordEncoder`. The env var must therefore contain the full
+Spring Security encoded form — Spring does **not** hash secrets automatically at runtime.
 
+Simplest approach (homelab): prefix with `{noop}` so the secret is matched as-is:
 ```bash
 kubectl create secret generic homelab-auth-secrets -n apps \
-  --from-literal=grafana-client-secret=<grafana-plaintext-secret> \
-  --from-literal=ha-client-secret=<ha-plaintext-secret>
+  --from-literal=grafana-client-secret="{noop}<grafana-plaintext-secret>" \
+  --from-literal=ha-client-secret="{noop}<ha-plaintext-secret>"
+```
+
+More secure: pre-hash with BCrypt and prefix with `{bcrypt}`:
+```bash
+HASH=$(htpasswd -bnBC 12 "" <plaintext-secret> | tr -d ':\n')
+kubectl create secret generic homelab-auth-secrets -n apps \
+  --from-literal=grafana-client-secret="{bcrypt}${HASH}"
 ```
 
 These are referenced in `k8s/deployment.yaml` as:
