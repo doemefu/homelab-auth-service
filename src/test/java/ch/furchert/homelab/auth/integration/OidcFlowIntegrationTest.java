@@ -193,7 +193,6 @@ class OidcFlowIntegrationTest extends AbstractIntegrationTest {
                 .queryParam("code_challenge", codeChallenge)
                 .queryParam("code_challenge_method", "S256")
                 .build()
-                .encode()
                 .toUriString();
     }
 
