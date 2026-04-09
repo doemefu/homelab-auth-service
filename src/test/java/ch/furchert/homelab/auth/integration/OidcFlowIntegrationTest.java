@@ -20,6 +20,8 @@ import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.Base64;
 
+import org.springframework.web.util.UriComponentsBuilder;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -69,14 +71,10 @@ class OidcFlowIntegrationTest extends AbstractIntegrationTest {
         String codeVerifier = generateCodeVerifier();
         String codeChallenge = generateCodeChallenge(codeVerifier);
 
-        mockMvc.perform(get("/oauth2/authorize")
-                .param("response_type", "code")
-                .param("client_id", "test-client")
-                .param("redirect_uri", "https://app.test.local/callback")
-                .param("scope", "openid profile email")
-                .param("state", "test-state")
-                .param("code_challenge", codeChallenge)
-                .param("code_challenge_method", "S256"))
+        // Parameters must be in the query string (not .param()) because Spring
+        // Authorization Server reads them via getQueryString(), which MockMvc's
+        // .param() does not populate for GET requests.
+        mockMvc.perform(get(buildAuthorizeUrl(codeChallenge)))
             .andExpect(status().is3xxRedirection())
             .andExpect(redirectedUrlPattern("**/login**"));
     }
@@ -87,14 +85,7 @@ class OidcFlowIntegrationTest extends AbstractIntegrationTest {
         String codeChallenge = generateCodeChallenge(codeVerifier);
 
         // Step 1: GET /oauth2/authorize → 302 to /login
-        MvcResult authorizeResult = mockMvc.perform(get("/oauth2/authorize")
-                .param("response_type", "code")
-                .param("client_id", "test-client")
-                .param("redirect_uri", "https://app.test.local/callback")
-                .param("scope", "openid profile email")
-                .param("state", "test-state")
-                .param("code_challenge", codeChallenge)
-                .param("code_challenge_method", "S256"))
+        MvcResult authorizeResult = mockMvc.perform(get(buildAuthorizeUrl(codeChallenge)))
             .andExpect(status().is3xxRedirection())
             .andReturn();
 
@@ -191,6 +182,20 @@ class OidcFlowIntegrationTest extends AbstractIntegrationTest {
     }
 
     // --- helpers ---
+
+    private static String buildAuthorizeUrl(String codeChallenge) {
+        return UriComponentsBuilder.fromPath("/oauth2/authorize")
+                .queryParam("response_type", "code")
+                .queryParam("client_id", "test-client")
+                .queryParam("redirect_uri", "https://app.test.local/callback")
+                .queryParam("scope", "openid profile email")
+                .queryParam("state", "test-state")
+                .queryParam("code_challenge", codeChallenge)
+                .queryParam("code_challenge_method", "S256")
+                .build()
+                .encode()
+                .toUriString();
+    }
 
     private static String generateCodeVerifier() {
         byte[] bytes = new byte[32];
