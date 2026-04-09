@@ -11,11 +11,6 @@ env:
   IMAGE_NAME: doemefu/homelab-auth-service
 
 jobs:
-  codeql:
-    uses: github/codeql-action/init@v3
-    with:
-      languages: java
-
   test:
     runs-on: ubuntu-latest
     steps:
