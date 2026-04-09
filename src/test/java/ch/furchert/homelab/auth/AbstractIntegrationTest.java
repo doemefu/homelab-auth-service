@@ -29,5 +29,14 @@ public abstract class AbstractIntegrationTest {
         registry.add("app.oidc.clients[0].scopes[0]", () -> "openid");
         registry.add("app.oidc.clients[0].scopes[1]", () -> "profile");
         registry.add("app.oidc.clients[0].scopes[2]", () -> "email");
+        // Override clients[1] so that ${HA_CLIENT_SECRET} and ${GRAFANA_CLIENT_SECRET}
+        // in application.yaml are never evaluated without the env vars present in CI.
+        registry.add("app.oidc.clients[1].client-id", () -> "homeassistant");
+        registry.add("app.oidc.clients[1].client-secret", () -> "{noop}test-secret");
+        registry.add("app.oidc.clients[1].redirect-uris[0]", () -> "https://ha.test.local/callback");
+        registry.add("app.oidc.clients[1].post-logout-redirect-uris[0]", () -> "https://ha.test.local");
+        registry.add("app.oidc.clients[1].scopes[0]", () -> "openid");
+        registry.add("app.oidc.clients[1].scopes[1]", () -> "profile");
+        registry.add("app.oidc.clients[1].scopes[2]", () -> "email");
     }
 }
