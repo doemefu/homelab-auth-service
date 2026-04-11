@@ -78,10 +78,23 @@ class OidcFlowIntegrationTest extends AbstractIntegrationTest {
         String codeVerifier = generateCodeVerifier();
         String codeChallenge = generateCodeChallenge(codeVerifier);
 
-        // Parameters must be in the query string (not .param()) because Spring
-        // Authorization Server reads them via getQueryString(), which MockMvc's
-        // .param() does not populate for GET requests.
-        mockMvc.perform(get(buildAuthorizeUrl(codeChallenge)))
+        // Spring AS reads OAuth2 params via getQueryParameters() which requires
+        // keys to appear in request.getQueryString(). MockMvc's .param() populates
+        // the parameter map (with correctly decoded values) but not the query string.
+        // We use .param() for decoded values + a RequestPostProcessor to set the
+        // raw query string so Spring AS can find the parameter keys.
+        mockMvc.perform(get("/oauth2/authorize")
+                .param("response_type", "code")
+                .param("client_id", "test-client")
+                .param("redirect_uri", "https://app.test.local/callback")
+                .param("scope", "openid profile email")
+                .param("state", "test-state")
+                .param("code_challenge", codeChallenge)
+                .param("code_challenge_method", "S256")
+                .with(request -> {
+                    request.setQueryString(buildQueryString(codeChallenge));
+                    return request;
+                }))
             .andExpect(status().is3xxRedirection())
             .andExpect(redirectedUrlPattern("**/login**"));
     }
@@ -92,7 +105,18 @@ class OidcFlowIntegrationTest extends AbstractIntegrationTest {
         String codeChallenge = generateCodeChallenge(codeVerifier);
 
         // Step 1: GET /oauth2/authorize → 302 to /login
-        MvcResult authorizeResult = mockMvc.perform(get(buildAuthorizeUrl(codeChallenge)))
+        MvcResult authorizeResult = mockMvc.perform(get("/oauth2/authorize")
+                .param("response_type", "code")
+                .param("client_id", "test-client")
+                .param("redirect_uri", "https://app.test.local/callback")
+                .param("scope", "openid profile email")
+                .param("state", "test-state")
+                .param("code_challenge", codeChallenge)
+                .param("code_challenge_method", "S256")
+                .with(request -> {
+                    request.setQueryString(buildQueryString(codeChallenge));
+                    return request;
+                }))
             .andExpect(status().is3xxRedirection())
             .andReturn();
 
@@ -190,12 +214,13 @@ class OidcFlowIntegrationTest extends AbstractIntegrationTest {
 
     // --- helpers ---
 
-    private static String buildAuthorizeUrl(String codeChallenge) {
-        // Build URL as a plain string so that query parameters land in the raw
-        // query string where Spring Authorization Server can read them.
-        // Use '+' for spaces in scope (standard application/x-www-form-urlencoded).
-        return "/oauth2/authorize"
-                + "?response_type=code"
+    private static String buildQueryString(String codeChallenge) {
+        // Raw query string for request.setQueryString(). Spring AS's
+        // getQueryParameters() checks that each parameter key appears in
+        // the query string before including it. The values here don't matter
+        // as much — Spring AS reads values from the parameter map, not the
+        // query string directly.
+        return "response_type=code"
                 + "&client_id=test-client"
                 + "&redirect_uri=https://app.test.local/callback"
                 + "&scope=openid+profile+email"
