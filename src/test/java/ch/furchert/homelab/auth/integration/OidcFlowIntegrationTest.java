@@ -57,6 +57,15 @@ class OidcFlowIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void registeredClientHasExpectedScopes(@Autowired org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository clientRepo) {
+        var client = clientRepo.findByClientId("test-client");
+        assertThat(client).isNotNull();
+        assertThat(client.getScopes())
+            .as("Registered client 'test-client' scopes")
+            .containsExactlyInAnyOrder("openid", "profile", "email");
+    }
+
+    @Test
     void jwksEndpointReturnsPublicKey() throws Exception {
         mockMvc.perform(get("/oauth2/jwks"))
             .andExpect(status().isOk())
