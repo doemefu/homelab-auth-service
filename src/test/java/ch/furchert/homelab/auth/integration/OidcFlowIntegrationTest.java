@@ -12,8 +12,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -31,6 +31,7 @@ class OidcFlowIntegrationTest extends AbstractIntegrationTest {
     @Autowired MockMvc mockMvc;
     @Autowired UserRepository userRepository;
     @Autowired PasswordEncoder passwordEncoder;
+    @Autowired ObjectMapper objectMapper;
 
     @BeforeEach
     void createTestUser() {
@@ -177,7 +178,7 @@ class OidcFlowIntegrationTest extends AbstractIntegrationTest {
             .andExpect(jsonPath("$.token_type").value("Bearer"))
             .andReturn();
 
-        JsonNode tokenResponse = new ObjectMapper().readTree(
+        JsonNode tokenResponse = objectMapper.readTree(
                 tokenResult.getResponse().getContentAsString());
         String accessToken = tokenResponse.get("access_token").asText();
         String idToken = tokenResponse.get("id_token").asText();

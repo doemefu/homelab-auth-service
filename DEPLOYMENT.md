@@ -64,6 +64,15 @@ env:
         key: ha-client-secret
 ```
 
+### Sentry DSN (optional)
+
+The `SENTRY_DSN` env var is marked `optional: true` in `k8s/deployment.yaml`. If the Secret does not exist, the pod starts cleanly and Sentry is disabled. To enable Sentry, create:
+
+```bash
+kubectl create secret generic sentry-dsn -n apps \
+  --from-literal=dsn=<your-sentry-dsn>
+```
+
 ---
 
 ## OIDC-Specific Deployment Notes

@@ -1,6 +1,6 @@
 # homelab-auth-service
 
-JWT authentication service for the doemefu homelab IoT ecosystem. 
+OIDC Identity Provider (Spring Authorization Server) for the doemefu homelab IoT ecosystem.
 
 **Port:** 8080 | **Package:** `ch.furchert.homelab.auth` | **Database:** PostgreSQL
 
@@ -47,8 +47,6 @@ All user endpoints are prefixed `/api/v1`.
 | POST | `/api/v1/users/{id}/reset-password` | ADMIN or self | Reset password (self requires `currentPassword`) |
 | GET | `/actuator/health` | None | K8s liveness/readiness |
 | GET | `/actuator/info` | None | Service info |
-| GET | `/api-docs` | None | OpenAPI JSON spec |
-| GET | `/swagger-ui.html` | None | Swagger UI |
 
 ---
 
