@@ -18,7 +18,7 @@ public record UserResponse(
                 user.getId(),
                 user.getUsername(),
                 user.getEmail(),
-                user.getRole(),
+                user.getRole().name(),
                 user.getStatus(),
                 user.getCreatedAt(),
                 user.getUpdatedAt()

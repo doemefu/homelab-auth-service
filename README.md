@@ -1,6 +1,6 @@
 # homelab-auth-service
 
-JWT authentication service for the doemefu homelab IoT ecosystem.
+OIDC Identity Provider (Spring Authorization Server) for the doemefu homelab IoT ecosystem.
 
 **Port:** 8080 | **Package:** `ch.furchert.homelab.auth` | **Database:** PostgreSQL
 
@@ -8,13 +8,13 @@ JWT authentication service for the doemefu homelab IoT ecosystem.
 
 ## Responsibilities
 
-- User CRUD (create, read, update, delete, password reset)
-- JWT issuance and refresh (jjwt + RSA key pair, `kid: auth-service-v1`)
-- JWKS endpoint for downstream services to validate tokens locally
+- OIDC Identity Provider (Spring Authorization Server) for SSO across furchert.ch homelab services
+- OIDC Discovery at `/.well-known/openid-configuration`
+- Authorization Code Flow with PKCE for Grafana, Home Assistant, and other clients
+- JWKS endpoint (`/oauth2/jwks`) for downstream services to validate tokens
+- User CRUD (create, read, update, delete, password reset) via admin API
 - Role-based access control: `USER`, `ADMIN`
-- Refresh tokens are SHA-256 hashed before database storage
-- Username change or password reset invalidates all refresh tokens for the user
-- Automatic purge of expired refresh tokens (hourly scheduled task)
+- Automatic purge of expired OAuth2 authorizations (hourly)
 
 **Does NOT:** talk to MQTT, InfluxDB, or any other service at runtime. Fully self-contained.
 
@@ -22,23 +22,31 @@ JWT authentication service for the doemefu homelab IoT ecosystem.
 
 ## API Reference
 
-All endpoints are prefixed `/api/v1`.
+### OIDC Endpoints
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | `/api/v1/auth/login` | None | Returns `accessToken` + `refreshToken` |
-| POST | `/api/v1/auth/refresh` | None (body: `refreshToken`) | Rotates refresh token, returns new pair |
-| POST | `/api/v1/auth/logout` | Bearer JWT | Invalidates all refresh tokens for caller |
-| GET | `/api/v1/auth/jwks` | None | RSA public key in JWK Set format (`kid: auth-service-v1`) |
+| GET | `/.well-known/openid-configuration` | None | OIDC Discovery document |
+| GET | `/oauth2/authorize` | Session (form login) | Authorization endpoint |
+| POST | `/oauth2/token` | Client credentials (Basic) | Token endpoint |
+| GET | `/oauth2/jwks` | None | JSON Web Key Set |
+| GET | `/userinfo` | Bearer token | OIDC UserInfo endpoint |
+| POST | `/connect/logout` | Session | RP-Initiated Logout |
+| GET | `/login` | None | Login page |
+
+### User CRUD API
+
+All user endpoints are prefixed `/api/v1`.
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
 | POST | `/api/v1/users` | ADMIN | Create user |
-| GET | `/api/v1/users/{id}` | JWT (ADMIN or own ID) | Get user |
+| GET | `/api/v1/users/{id}` | Bearer token (ADMIN or own ID) | Get user |
 | PUT | `/api/v1/users/{id}` | ADMIN | Update user |
 | DELETE | `/api/v1/users/{id}` | ADMIN | Delete user |
 | POST | `/api/v1/users/{id}/reset-password` | ADMIN or self | Reset password (self requires `currentPassword`) |
 | GET | `/actuator/health` | None | K8s liveness/readiness |
 | GET | `/actuator/info` | None | Service info |
-| GET | `/api-docs` | None | OpenAPI JSON spec |
-| GET | `/swagger-ui.html` | None | Swagger UI |
 
 ---
 
@@ -97,10 +105,11 @@ export DB_PASSWORD=homelab
 | `spring.datasource.password` | `DB_PASSWORD` | — (required) |
 | `app.jwt.private-key` | `APP_JWT_PRIVATE_KEY` | `classpath:keys/private.pem` |
 | `app.jwt.public-key` | `APP_JWT_PUBLIC_KEY` | `classpath:keys/public.pem` |
-| `app.jwt.access-token-expiry` | — | `900000` ms (15 min) |
-| `app.jwt.refresh-token-expiry` | — | `604800000` ms (7 days) |
+| `app.oidc.issuer` | — | — (required; must match the public ingress URL exactly) |
+| `app.oidc.clients[0].client-secret` | `GRAFANA_CLIENT_SECRET` | — (required; must include `{id}` prefix, e.g. `{noop}secret`) |
+| `app.oidc.clients[1].client-secret` | `HA_CLIENT_SECRET` | — (required; must include `{id}` prefix, e.g. `{noop}secret`) |
 
-Expired refresh tokens are automatically purged every hour by `TokenCleanupScheduler`. No additional configuration required.
+Expired OAuth2 authorizations are automatically purged every hour by `TokenCleanupScheduler`. No additional configuration required.
 
 ---
 
@@ -121,13 +130,13 @@ VALUES ('admin', 'admin@homelab.local', '$2a$12$<bcrypt-hash>', 'ADMIN', 'ACTIVE
 This service is 1 of 3 microservices in the homelab IoT stack.
 
 ```
-auth-service   ──JWKS──>  device-service
-                    └──>  data-service
+auth-service   ──OIDC SSO──>  Grafana
+                    └──>  Home Assistant
+                    └──JWKS──>  device-service
+                    └──JWKS──>  data-service
 ```
 
-Other services validate JWTs by fetching the RSA public key from `/api/v1/auth/jwks` at startup — no runtime dependency on auth-service for every request.
-
-**Key design:** jjwt + RSA (not Spring Authorization Server). Simple, self-contained, auditable.
+Other services validate tokens by fetching the RSA public key from `/oauth2/jwks` at startup — no runtime dependency on auth-service for every request. SSO is provided via OIDC Authorization Code Flow with PKCE.
 
 ---
 
@@ -161,3 +170,15 @@ GitHub Actions workflow at `.github/workflows/build.yml`:
 - **build-and-push** job: builds a multi-arch image (`linux/amd64` + `linux/arm64`) and pushes to `ghcr.io/doemefu/homelab-auth-service:<git-sha>` — runs only on push to `main` after tests pass
 
 Image registry: `ghcr.io/doemefu/homelab-auth-service`
+
+---
+
+## Related Repositories
+
+| Repo | Description |
+|------|-------------|
+| [homelab](https://github.com/doemefu/homelab) | Infrastructure-as-Code — Ansible, K3s cluster, platform services (PostgreSQL, InfluxDB, Mosquitto) |
+| [homelab-device-service](https://github.com/doemefu/homelab-device-service) | Real-time IoT device management — MQTT subscriber, InfluxDB writer, WebSocket broadcast, scheduling |
+| homelab-data-service | Historical data queries (InfluxDB) + schedule CRUD (not yet created) |
+
+Full architecture docs (migration plan, current/target architecture, cross-service contracts): [homelab/docs/](https://github.com/doemefu/homelab/tree/main/docs)
