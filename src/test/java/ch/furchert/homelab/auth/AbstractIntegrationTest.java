@@ -5,16 +5,20 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 @SpringBootTest
 @AutoConfigureMockMvc
-@Testcontainers
 public abstract class AbstractIntegrationTest {
 
-    @Container
+    // Static initializer keeps the container alive for the entire JVM lifetime.
+    // Do NOT use @Testcontainers + @Container here: JUnit 5's AfterAllCallback
+    // stops @Container static fields after each concrete subclass finishes, which
+    // kills the container before the next integration test class can connect.
     static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:17-alpine");
+
+    static {
+        postgres.start();
+    }
 
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {

@@ -4,6 +4,20 @@
 
 - [SS7 OAuth2 AS API](feedback_ss7_oauth2_api.md) — Use http.oauth2AuthorizationServer() not static authorizationServer()
 - [MockMvc query string](feedback_mockmvc_querystring.md) — MockMvc .param() doesn't set query string; use UriComponentsBuilder for GET AS endpoints
+- [Testcontainers lifecycle](feedback_testcontainers_lifecycle.md) — Use @Testcontainers + @Container, never static initializer — static breaks with multiple Spring contexts
+- [TokenCleanupScheduler SQL](feedback_cleanup_scheduler_sql.md) — COALESCE-to-epoch inside GREATEST matches all-NULL rows; always guard with IS NOT NULL
+- [OIDC client secret prefix](feedback_oidc_secret_prefix.md) — DelegatingPasswordEncoder requires {noop}/{bcrypt} prefix; missing prefix = BCrypt mismatch = silent auth failure
+- [Jackson 3 imports](feedback_jackson3_imports.md) — Project uses tools.jackson (Jackson 3), not com.fasterxml.jackson (Jackson 2)
+
+## 2026-04-11 — PR #15 review fixes (10 Copilot + CodeQL findings)
+
+**Decision:** Addressed all 10 open findings from PR #15 automated reviews. Key fixes: TokenCleanupScheduler SQL WHERE bug (COALESCE-to-epoch), k8s OIDC client secrets missing env vars, SENTRY_DSN optional, Jackson 3 imports, AbstractIntegrationTest @Testcontainers lifecycle, README/CONTRIBUTING doc corrections.
+**Worklog:** `.claude/worklogs/20260411-211223-pr15-review-fixes-k9r2.md`
+**Status:** done — pending commit + push by user
+**Open:**
+- User must commit changes and push to `dev` to trigger CI and mark PR comments as outdated
+- Operator must create `homelab-oidc-client-secrets` Secret in namespace `apps` before deploying
+- CI was failing pre-commit due to Testcontainers static initializer issue; @Testcontainers fix should resolve it
 
 ## 2026-04-09 — Fix OIDC authorize 400 in integration tests
 
