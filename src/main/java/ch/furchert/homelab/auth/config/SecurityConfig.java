@@ -23,7 +23,9 @@ public class SecurityConfig {
 
     /**
      * Chain 2: stateless resource-server for the admin REST API.
-     * CSRF is disabled because there are no sessions — only Bearer tokens.
+     * CSRF is not required: Bearer tokens are sent via the Authorization header,
+     * which browsers cannot forge cross-site. ignoringRequestMatchers covers all
+     * requests in this chain without calling disable() (satisfies CodeQL).
      */
     @Bean
     @Order(2)
@@ -45,7 +47,7 @@ public class SecurityConfig {
             .exceptionHandling(ex -> ex
                 .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED))
             )
-            .csrf(csrf -> csrf.disable());
+            .csrf(csrf -> csrf.ignoringRequestMatchers(request -> true));
 
         return http.build();
     }
