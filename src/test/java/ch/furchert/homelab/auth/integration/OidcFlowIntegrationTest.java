@@ -96,7 +96,11 @@ class OidcFlowIntegrationTest extends AbstractIntegrationTest {
                     return request;
                 }))
             .andExpect(status().is3xxRedirection())
-            .andExpect(redirectedUrlPattern("**/login**"));
+            .andExpect(result -> {
+                String redirectUrl = result.getResponse().getRedirectedUrl();
+                assertThat(redirectUrl).isNotNull();
+                assertThat(redirectUrl).contains("/login");
+            });
     }
 
     @Test
@@ -135,8 +139,22 @@ class OidcFlowIntegrationTest extends AbstractIntegrationTest {
         String loginRedirect = loginResult.getResponse().getRedirectedUrl();
         assertThat(loginRedirect).isNotNull();
 
-        // Step 3: Follow redirect back to /oauth2/authorize → 302 to redirect_uri?code=...
-        MvcResult codeResult = mockMvc.perform(get(loginRedirect).session(session))
+        // Step 3: Replay authorize request with authenticated session.
+        // We cannot simply GET the loginRedirect URL because MockMvc re-encodes
+        // query params (%20 / +), causing Spring AS scope validation to fail.
+        MvcResult codeResult = mockMvc.perform(get("/oauth2/authorize")
+                .param("response_type", "code")
+                .param("client_id", "test-client")
+                .param("redirect_uri", "https://app.test.local/callback")
+                .param("scope", "openid profile email")
+                .param("state", "test-state")
+                .param("code_challenge", codeChallenge)
+                .param("code_challenge_method", "S256")
+                .session(session)
+                .with(request -> {
+                    request.setQueryString(buildQueryString(codeChallenge));
+                    return request;
+                }))
             .andExpect(status().is3xxRedirection())
             .andReturn();
 
