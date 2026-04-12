@@ -17,8 +17,8 @@ spec:
     spec:
       containers:
         - name: auth-service
-          # Replace <SHA> with the git commit SHA from CI/CD before applying
-          image: ghcr.io/doemefu/homelab-auth-service:<SHA>
+          # Image tag is managed by Flux CD image automation.
+          image: ghcr.io/doemefu/homelab-auth-service:main-20260412T130000 # {"$imagepolicy": "flux-system:auth-service"}
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
