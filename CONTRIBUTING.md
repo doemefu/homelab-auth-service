@@ -139,7 +139,7 @@ GitHub Actions workflow: `.github/workflows/build.yml`
 
 - Every push and PR to `main` runs `./mvnw verify` (includes integration tests)
 - On push to `main` (after tests pass): multi-arch Docker image built (`linux/amd64` + `linux/arm64`) and pushed to `ghcr.io/doemefu/homelab-auth-service`
-- Two tags are pushed: `<git-sha>` (content-addressable, for debugging) and `main-YYYYMMDDTHHMMSS` (timestamp tag used by Flux CD)
+- Two tags are pushed: `<git-sha>` (content-addressable, for debugging) and `main-YYYYMMDDTHHmmss` (timestamp tag used by Flux CD)
 - The `latest` tag is not pushed — Flux CD uses the sortable timestamp tag to select the newest image
 
 **No manual image tag update is needed.** Flux CD automatically detects the new `main-*` tag on GHCR, commits the updated tag to `k8s/deployment.yaml`, and rolls out the new pod.
