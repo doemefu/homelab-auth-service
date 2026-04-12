@@ -143,8 +143,11 @@ Other services validate tokens by fetching the RSA public key from `/oauth2/jwks
 ## K8s Deployment
 
 Manifests are in `k8s/`:
-- `k8s/deployment.yaml` — Deployment in namespace `apps`, image tag `:<git-sha>` (replace before `kubectl apply`), mounts RSA keys from Secret `homelab-auth-rsa-keys`, reads DB credentials from Secret `homelab-db-credentials`
+- `k8s/deployment.yaml` — Deployment in namespace `apps`; image tag managed by Flux CD (do not edit the tag manually); mounts RSA keys from Secret `homelab-auth-rsa-keys`, reads DB credentials from Secret `homelab-db-credentials`
 - `k8s/service.yaml` — ClusterIP Service on port 8080
+- `k8s/kustomization.yaml` — Kustomize base consumed by Flux
+
+**Deployments are automated via Flux CD.** Push to `main` — CI builds a new `main-YYYYMMDDTHHmmss` image, Flux detects it within 5 min, commits the updated tag to this repo, and the cluster rolls out the new pod automatically.
 
 Required Secrets (must exist in namespace `apps` before first deploy):
 
@@ -167,7 +170,13 @@ kubectl create secret generic homelab-auth-rsa-keys -n apps \
 GitHub Actions workflow at `.github/workflows/build.yml`:
 
 - **test** job: runs `./mvnw verify` on every push and PR to `main` (Testcontainers integration tests run on the CI runner)
-- **build-and-push** job: builds a multi-arch image (`linux/amd64` + `linux/arm64`) and pushes to `ghcr.io/doemefu/homelab-auth-service:<git-sha>` — runs only on push to `main` after tests pass
+- **build-and-push** job: builds a multi-arch image (`linux/amd64` + `linux/arm64`) and pushes to `ghcr.io/doemefu/homelab-auth-service` — runs only on push to `main` after tests pass
+
+Two tags are pushed per build:
+- `<git-sha>` — content-addressable, retained for debugging
+- `main-YYYYMMDDTHHmmss` — timestamp tag used by Flux CD for automatic deployment
+
+The `latest` tag is not pushed. Flux CD selects the newest `main-*` tag via `ImagePolicy` and updates `k8s/deployment.yaml` automatically.
 
 Image registry: `ghcr.io/doemefu/homelab-auth-service`
 

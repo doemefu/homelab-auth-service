@@ -4,6 +4,33 @@ This file covers auth-service-specific deployment notes. For general cluster dep
 
 ---
 
+## Automated deployment (Flux CD)
+
+`auth-service` is managed by **Flux CD**. Do not `kubectl apply` the manifests manually — Flux will overwrite any manual change within the next reconciliation interval (≤10 min).
+
+**Deploying a new version:** Push to `main`. CI builds a new image with a `main-YYYYMMDDTHHmmss` tag. Flux detects it within 5 min, commits the updated tag to `k8s/deployment.yaml` in this repo, and the `Kustomization` applies the change to the cluster automatically.
+
+**Checking status:**
+```bash
+flux get kustomizations -n flux-system        # reconciliation state
+flux get image updates -n flux-system         # last automation commit
+kubectl rollout status deployment/auth-service -n apps
+```
+
+**Forcing a reconciliation:**
+```bash
+flux reconcile kustomization auth-service -n flux-system --with-source
+```
+
+**Suspending automation** (e.g. for an emergency image pin):
+```bash
+flux suspend image update auth-service -n flux-system
+# Update image tag manually in k8s/deployment.yaml if needed, then:
+flux resume image update auth-service -n flux-system
+```
+
+---
+
 ## Required K8s Secrets
 
 ### Database credentials (existing)
