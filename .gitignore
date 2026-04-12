@@ -37,12 +37,14 @@ build/
 
 ### RSA keys (local dev only) ###
 src/main/resources/keys/
-src/test/resources/keys/
 
 ### Environment ###
 .env
 *.pem
-/.claude/
+### Claude Code ###
+.claude/settings.json
+.claude/settings.local.json
+.claude/**/.DS_Store
 
 # Build & Cache
 *.class
@@ -84,3 +86,7 @@ replay_pid*
 # Test coverage
 coverage/
 .coverage
+
+# Test RSA keys are tracked — not real credentials
+!src/test/resources/keys/
+!src/test/resources/keys/*.pem

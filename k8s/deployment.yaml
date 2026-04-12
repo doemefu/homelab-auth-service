@@ -37,6 +37,22 @@ spec:
               value: "file:/etc/secrets/private.pem"
             - name: APP_JWT_PUBLIC_KEY
               value: "file:/etc/secrets/public.pem"
+            - name: GRAFANA_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: homelab-auth-secrets
+                  key: grafana-client-secret
+            - name: HA_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: homelab-auth-secrets
+                  key: ha-client-secret
+            - name: SENTRY_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: sentry-dsn
+                  key: dsn
+                  optional: true
           volumeMounts:
             - name: rsa-keys
               mountPath: /etc/secrets
