@@ -41,6 +41,31 @@ Current migrations:
 
 **Never edit or delete existing `V*.sql` migration files.** Flyway checksums will fail.
 
+### Deploying onto an existing schema without a Flyway history table
+
+If the database already has tables (e.g., migrated from a pre-Flyway setup or the history table was accidentally dropped) Flyway will refuse to start with:
+
+```
+Found non-empty schema(s) "public" but no schema history table.
+```
+
+Set the following env vars in the K8s Secret or ConfigMap **for the first rollout only**, then remove them once the pod is healthy:
+
+```bash
+FLYWAY_BASELINE_ON_MIGRATE=true
+FLYWAY_BASELINE_VERSION=4   # current highest migration; update if newer migrations exist
+```
+
+After the pod starts successfully, verify the history table was created:
+
+```bash
+kubectl exec -n apps deploy/auth-service -- \
+  sh -c 'PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -U $DB_USERNAME -d homelabdb \
+  -c "SELECT version, description, success FROM flyway_schema_history_auth ORDER BY installed_rank;"'
+```
+
+Then remove `FLYWAY_BASELINE_ON_MIGRATE` from the deployment. Leaving `true` permanently would silently re-baseline if the history table is ever dropped instead of failing loudly.
+
 ---
 
 ## Adding a New OIDC Client
@@ -253,7 +278,10 @@ The K8s deployment uses image tag `:<git-sha>` (not `:latest`). Update `k8s/depl
 kubectl logs -n apps deployment/auth-service | grep -i "flyway\|migration\|error"
 ```
 
-Common causes: database unreachable, migration checksum mismatch (edited existing migration file).
+Common causes:
+- **Database unreachable** — check `DB_URL` env var and PostgreSQL pod status
+- **Checksum mismatch** — an existing `V*.sql` file was edited; restore the original or repair with `flyway repair`
+- **Non-empty schema, no history table** — see *Deploying onto an existing schema without a Flyway history table* above
 
 ### Service fails to start — RSA key error
 
