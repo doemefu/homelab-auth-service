@@ -33,6 +33,8 @@ spec:
                 secretKeyRef:
                   name: homelab-db-credentials
                   key: password
+            - name: DB_URL
+              value: "jdbc:postgresql://postgres.apps.svc.cluster.local:5432/homelabdb"
             - name: APP_JWT_PRIVATE_KEY
               value: "file:/etc/secrets/private.pem"
             - name: APP_JWT_PUBLIC_KEY
