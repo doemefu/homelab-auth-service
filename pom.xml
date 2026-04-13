@@ -120,8 +120,8 @@
 		<!-- Sentry error tracking -->
 		<dependency>
 			<groupId>io.sentry</groupId>
-			<artifactId>sentry-spring-boot-starter-jakarta</artifactId>
-			<version>8.34.1</version>
+			<artifactId>sentry-spring-boot-4</artifactId>
+			<version>8.38.0</version>
 		</dependency>
 	</dependencies>
 
