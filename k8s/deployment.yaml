@@ -18,7 +18,7 @@ spec:
       containers:
         - name: auth-service
           # Image tag is managed by Flux CD image automation.
-          image: ghcr.io/doemefu/homelab-auth-service:main-20260413T043910 # {"$imagepolicy": "flux-system:auth-service"}
+          image: ghcr.io/doemefu/homelab-auth-service:main-20260413T044412 # {"$imagepolicy": "flux-system:auth-service"}
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
