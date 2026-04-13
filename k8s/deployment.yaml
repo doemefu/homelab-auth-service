@@ -35,10 +35,6 @@ spec:
                   key: password
             - name: DB_URL
               value: "jdbc:postgresql://postgresql.apps.svc.cluster.local:5432/homelabdb"
-            - name: SPRING_FLYWAY_BASELINE_ON_MIGRATE
-              value: "true"
-            - name: SPRING_FLYWAY_BASELINE_VERSION
-              value: "0"
             - name: APP_JWT_PRIVATE_KEY
               value: "file:/etc/secrets/private.pem"
             - name: APP_JWT_PUBLIC_KEY

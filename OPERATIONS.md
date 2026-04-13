@@ -53,7 +53,7 @@ Set the following env vars in the K8s Secret or ConfigMap **for the first rollou
 
 ```bash
 FLYWAY_BASELINE_ON_MIGRATE=true
-FLYWAY_BASELINE_VERSION=4   # current highest migration; update if newer migrations exist
+FLYWAY_BASELINE_VERSION=0   # baselines before V1 so all migrations run; use only when auth-service tables don't exist yet
 ```
 
 After the pod starts successfully, verify the history table was created:

@@ -16,7 +16,7 @@ spring:
     enabled: true
     table: flyway_schema_history_auth
     baseline-on-migrate: ${FLYWAY_BASELINE_ON_MIGRATE:false}
-    baseline-version: ${FLYWAY_BASELINE_VERSION:4}
+    baseline-version: ${FLYWAY_BASELINE_VERSION:0}
 
 server:
   port: 8080
