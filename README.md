@@ -45,8 +45,15 @@ All user endpoints are prefixed `/api/v1`.
 | PUT | `/api/v1/users/{id}` | ADMIN | Update user |
 | DELETE | `/api/v1/users/{id}` | ADMIN | Delete user |
 | POST | `/api/v1/users/{id}/reset-password` | ADMIN or self | Reset password (self requires `currentPassword`) |
+
+### Management & Docs
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
 | GET | `/actuator/health` | None | K8s liveness/readiness |
 | GET | `/actuator/info` | None | Service info |
+| GET | `/swagger-ui.html` | Session (form login) | Swagger UI — user CRUD API |
+| GET | `/api-docs` | Session (form login) | OpenAPI JSON spec |
 
 ---
 
