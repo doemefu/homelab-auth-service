@@ -75,7 +75,7 @@ openssl rsa -in src/test/resources/keys/private.pem -pubout -out src/test/resour
 ### 2. Port-forward PostgreSQL
 
 ```bash
-kubectl port-forward -n apps svc/postgres 5432:5432
+kubectl port-forward -n apps svc/postgresql 5432:5432
 ```
 
 ### 3. Run
