@@ -65,7 +65,8 @@ Simplest approach (homelab): prefix with `{noop}` so the secret is matched as-is
 ```bash
 kubectl create secret generic homelab-auth-secrets -n apps \
   --from-literal=grafana-client-secret="{noop}<grafana-plaintext-secret>" \
-  --from-literal=ha-client-secret="{noop}<ha-plaintext-secret>"
+  --from-literal=ha-client-secret="{noop}<ha-plaintext-secret>" \
+  --from-literal=device-service-client-secret="{noop}<device-service-plaintext-secret>"
 ```
 
 More secure: pre-hash with BCrypt and prefix with `{bcrypt}`:
@@ -89,6 +90,11 @@ env:
       secretKeyRef:
         name: homelab-auth-secrets
         key: ha-client-secret
+  - name: DEVICE_SERVICE_CLIENT_SECRET
+    valueFrom:
+      secretKeyRef:
+        name: homelab-auth-secrets
+        key: device-service-client-secret
 ```
 
 ### Sentry DSN (optional)

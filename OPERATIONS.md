@@ -235,6 +235,7 @@ spring:
 | `APP_JWT_PUBLIC_KEY` | `file:/etc/secrets/public.pem` | RSA public key path (volume mount) |
 | `GRAFANA_CLIENT_SECRET` | Secret `homelab-auth-secrets` / key `grafana-client-secret` | Grafana OIDC client secret (plaintext) |
 | `HA_CLIENT_SECRET` | Secret `homelab-auth-secrets` / key `ha-client-secret` | Home Assistant OIDC client secret (plaintext) |
+| `DEVICE_SERVICE_CLIENT_SECRET` | Secret `homelab-auth-secrets` / key `device-service-client-secret` | device-service OIDC client secret (plaintext) |
 
 RSA keys are mounted from Secret `homelab-auth-rsa-keys` at `/etc/secrets/`.
 
