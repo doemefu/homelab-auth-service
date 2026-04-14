@@ -45,8 +45,15 @@ All user endpoints are prefixed `/api/v1`.
 | PUT | `/api/v1/users/{id}` | ADMIN | Update user |
 | DELETE | `/api/v1/users/{id}` | ADMIN | Delete user |
 | POST | `/api/v1/users/{id}/reset-password` | ADMIN or self | Reset password (self requires `currentPassword`) |
+
+### Management & Docs
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
 | GET | `/actuator/health` | None | K8s liveness/readiness |
 | GET | `/actuator/info` | None | Service info |
+| GET | `/swagger-ui.html` | Session (form login) | Swagger UI — user CRUD API |
+| GET | `/api-docs` | Session (form login) | OpenAPI JSON spec |
 
 ---
 
@@ -75,9 +82,10 @@ openssl rsa -in src/test/resources/keys/private.pem -pubout -out src/test/resour
 ### 2. Port-forward PostgreSQL
 
 ```bash
-kubectl port-forward -n apps svc/postgres 5432:5432
+kubectl port-forward -n apps svc/postgresql 5432:5432
 ```
 
+> **Note:** Some other repo docs may still refer to `svc/postgres`. Use the service name that exists in your cluster; for this setup, the expected service is `svc/postgresql`.
 ### 3. Run
 
 ```bash
@@ -169,7 +177,7 @@ kubectl create secret generic homelab-auth-rsa-keys -n apps \
 
 GitHub Actions workflow at `.github/workflows/build.yml`:
 
-- **test** job: runs `./mvnw verify` on every push and PR to `main` (Testcontainers integration tests run on the CI runner)
+- **test** job: runs `./mvnw verify` on every push and PR to `main`, except pushes that only change files under `k8s/` (those are Flux CD tag-update commits and skipping them prevents a CI trigger loop)
 - **build-and-push** job: builds a multi-arch image (`linux/amd64` + `linux/arm64`) and pushes to `ghcr.io/doemefu/homelab-auth-service` — runs only on push to `main` after tests pass
 
 Two tags are pushed per build:
