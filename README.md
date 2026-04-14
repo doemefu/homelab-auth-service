@@ -85,6 +85,7 @@ openssl rsa -in src/test/resources/keys/private.pem -pubout -out src/test/resour
 kubectl port-forward -n apps svc/postgresql 5432:5432
 ```
 
+> **Note:** Some other repo docs may still refer to `svc/postgres`. Use the service name that exists in your cluster; for this setup, the expected service is `svc/postgresql`.
 ### 3. Run
 
 ```bash
