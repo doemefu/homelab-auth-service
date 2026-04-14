@@ -60,7 +60,7 @@ public class SecurityConfig {
     @Order(3)
     public SecurityFilterChain loginSecurityFilterChain(HttpSecurity http) throws Exception {
         http
-            .securityMatcher("/login", "/actuator/**")
+            .securityMatcher("/login", "/actuator/**", "/swagger-ui.html", "/swagger-ui/**", "/api-docs", "/api-docs/**")
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/login", "/actuator/health", "/actuator/info").permitAll()
                 .anyRequest().authenticated()
