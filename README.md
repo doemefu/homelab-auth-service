@@ -177,7 +177,7 @@ kubectl create secret generic homelab-auth-rsa-keys -n apps \
 
 GitHub Actions workflow at `.github/workflows/build.yml`:
 
-- **test** job: runs `./mvnw verify` on every push and PR to `main` (Testcontainers integration tests run on the CI runner)
+- **test** job: runs `./mvnw verify` on every push and PR to `main`, except pushes that only change files under `k8s/` (those are Flux CD tag-update commits and skipping them prevents a CI trigger loop)
 - **build-and-push** job: builds a multi-arch image (`linux/amd64` + `linux/arm64`) and pushes to `ghcr.io/doemefu/homelab-auth-service` — runs only on push to `main` after tests pass
 
 Two tags are pushed per build:
