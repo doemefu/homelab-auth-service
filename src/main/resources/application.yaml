@@ -47,6 +47,15 @@ app:
         post-logout-redirect-uris:
           - https://ha.furchert.ch
         scopes: [openid, profile, email]
+      - client-id: device-service
+        # The env var must include the Spring Security {id} prefix, e.g. "{noop}secret" or "{bcrypt}$2a$...".
+        client-secret: "${DEVICE_SERVICE_CLIENT_SECRET}"
+        redirect-uris:
+          - https://device.furchert.ch/login/oauth2/code/device-service
+          - http://localhost:8081/login/oauth2/code/device-service
+        post-logout-redirect-uris:
+          - https://device.furchert.ch
+        scopes: [openid, profile, email]
 
 management:
   endpoints:
