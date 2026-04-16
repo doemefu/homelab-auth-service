@@ -54,6 +54,11 @@ spec:
                 secretKeyRef:
                   name: homelab-auth-secrets
                   key: device-service-client-secret
+            - name: N8N_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: homelab-auth-secrets
+                  key: n8n-client-secret-authservice
             - name: SENTRY_DSN
               valueFrom:
                 secretKeyRef:
