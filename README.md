@@ -10,7 +10,7 @@ OIDC Identity Provider (Spring Authorization Server) for the doemefu homelab IoT
 
 - OIDC Identity Provider (Spring Authorization Server) for SSO across furchert.ch homelab services
 - OIDC Discovery at `/.well-known/openid-configuration`
-- Authorization Code Flow with PKCE for Grafana, Home Assistant, and other clients
+- Authorization Code Flow with PKCE for Grafana, Home Assistant, n8n, and other clients
 - JWKS endpoint (`/oauth2/jwks`) for downstream services to validate tokens
 - User CRUD (create, read, update, delete, password reset) via admin API
 - Role-based access control: `USER`, `ADMIN`
@@ -116,6 +116,8 @@ export DB_PASSWORD=homelab
 | `app.oidc.issuer` | — | — (required; must match the public ingress URL exactly) |
 | `app.oidc.clients[0].client-secret` | `GRAFANA_CLIENT_SECRET` | — (required; must include `{id}` prefix, e.g. `{noop}secret`) |
 | `app.oidc.clients[1].client-secret` | `HA_CLIENT_SECRET` | — (required; must include `{id}` prefix, e.g. `{noop}secret`) |
+| `app.oidc.clients[2].client-secret` | `DEVICE_SERVICE_CLIENT_SECRET` | — (required; must include `{id}` prefix, e.g. `{noop}secret`) |
+| `app.oidc.clients[3].client-secret` | `N8N_CLIENT_SECRET` | — (required; must include `{id}` prefix, e.g. `{noop}secret`) |
 
 Expired OAuth2 authorizations are automatically purged every hour by `TokenCleanupScheduler`. No additional configuration required.
 
@@ -140,6 +142,7 @@ This service is 1 of 3 microservices in the homelab IoT stack.
 ```
 auth-service   ──OIDC SSO──>  Grafana
                     └──>  Home Assistant
+                    └──>  n8n
                     └──JWKS──>  device-service
                     └──JWKS──>  data-service
 ```

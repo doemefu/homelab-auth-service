@@ -56,6 +56,14 @@ app:
         post-logout-redirect-uris:
           - https://device.furchert.ch
         scopes: [openid, profile, email]
+      - client-id: n8n
+        # The env var must include the Spring Security {id} prefix, e.g. "{noop}secret" or "{bcrypt}$2a$...".
+        client-secret: "${N8N_CLIENT_SECRET}"
+        redirect-uris:
+          - https://n8n.furchert.ch/rest/sso/oidc/callback
+        post-logout-redirect-uris:
+          - https://n8n.furchert.ch
+        scopes: [openid, profile, email]
 
 management:
   endpoints:

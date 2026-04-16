@@ -236,6 +236,7 @@ spring:
 | `GRAFANA_CLIENT_SECRET` | Secret `homelab-auth-secrets` / key `grafana-client-secret` | Grafana OIDC client secret (plaintext) |
 | `HA_CLIENT_SECRET` | Secret `homelab-auth-secrets` / key `ha-client-secret` | Home Assistant OIDC client secret (plaintext) |
 | `DEVICE_SERVICE_CLIENT_SECRET` | Secret `homelab-auth-secrets` / key `device-service-client-secret` | device-service OIDC client secret (plaintext) |
+| `N8N_CLIENT_SECRET` | Secret `homelab-auth-secrets` / key `n8n-client-secret-authservice` | n8n OIDC client secret for auth-service (must include `{id}` prefix) |
 
 RSA keys are mounted from Secret `homelab-auth-rsa-keys` at `/etc/secrets/`.
 
