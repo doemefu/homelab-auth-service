@@ -15,7 +15,7 @@
 - JWKS endpoint at `/oauth2/jwks` (replaces `/api/v1/auth/jwks`)
 - UserInfo endpoint at `/userinfo`
 - RP-Initiated Logout at `/connect/logout`
-- Pre-configured OIDC clients: `grafana`, `home-assistant`, `device-service`, `n8n`
+- Pre-configured OIDC clients: `grafana`, `homeassistant`, `device-service`, `n8n`
 - Flyway V3 migration: creates `oauth2_authorization` and `oauth2_authorization_consent` tables for Spring Authorization Server
 - Flyway V4 migration: drops legacy `refresh_tokens` table
 
