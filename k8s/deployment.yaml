@@ -62,6 +62,14 @@ spec:
                   # We keep a dedicated key so n8n can consume the same client secret in raw form
                   # from a different key without the Spring prefix.
                   key: n8n-client-secret-authservice
+            - name: LITELLM_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: homelab-auth-secrets
+                  # auth-service expects Spring Security encoded secret ({noop}/{bcrypt}).
+                  # We keep a dedicated key so LiteLLM can consume the same client secret in raw form
+                  # from a different key without the Spring prefix.
+                  key: litellm-client-secret-authservice
             - name: SENTRY_DSN
               valueFrom:
                 secretKeyRef:

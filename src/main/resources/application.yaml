@@ -64,6 +64,14 @@ app:
         post-logout-redirect-uris:
           - https://n8n.furchert.ch
         scopes: [openid, profile, email]
+      - client-id: litellm
+        # The env var must include the Spring Security {id} prefix, e.g. "{noop}secret" or "{bcrypt}$2a$...".
+        client-secret: "${LITELLM_CLIENT_SECRET}"
+        redirect-uris:
+          - https://ai.furchert.ch/sso/callback
+        post-logout-redirect-uris:
+          - https://ai.furchert.ch
+        scopes: [openid, profile, email]
 
 management:
   endpoints:

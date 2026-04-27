@@ -67,7 +67,8 @@ kubectl create secret generic homelab-auth-secrets -n apps \
   --from-literal=grafana-client-secret="{noop}<grafana-plaintext-secret>" \
   --from-literal=ha-client-secret="{noop}<ha-plaintext-secret>" \
   --from-literal=device-service-client-secret="{noop}<device-service-plaintext-secret>" \
-  --from-literal=n8n-client-secret-authservice="{noop}<n8n-plaintext-secret>"
+  --from-literal=n8n-client-secret-authservice="{noop}<n8n-plaintext-secret>" \
+  --from-literal=litellm-client-secret-authservice="{noop}<litellm-plaintext-secret>"
 ```
 
 More secure: pre-hash with BCrypt and prefix with `{bcrypt}`:
@@ -101,6 +102,11 @@ env:
       secretKeyRef:
         name: homelab-auth-secrets
         key: n8n-client-secret-authservice
+  - name: LITELLM_CLIENT_SECRET
+    valueFrom:
+      secretKeyRef:
+        name: homelab-auth-secrets
+        key: litellm-client-secret-authservice
 ```
 
 ### Sentry DSN (optional)
