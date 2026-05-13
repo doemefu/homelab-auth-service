@@ -132,6 +132,7 @@ class OidcFlowIntegrationTest extends AbstractIntegrationTest {
         MockHttpSession session = (MockHttpSession) authorizeResult.getRequest().getSession();
 
         // Step 2: POST /login with credentials
+        assert session != null;
         MvcResult loginResult = mockMvc.perform(post("/login")
                         .param("username", "testuser")
                         .param("password", "password123")
@@ -147,6 +148,7 @@ class OidcFlowIntegrationTest extends AbstractIntegrationTest {
         // Step 3: Replay authorize request with authenticated session.
         // We cannot simply GET the loginRedirect URL because MockMvc re-encodes
         // query params (%20 / +), causing Spring AS scope validation to fail.
+        assert session != null;
         MvcResult codeResult = mockMvc.perform(get("/oauth2/authorize")
                         .param("response_type", "code")
                         .param("client_id", "test-client")
@@ -184,8 +186,8 @@ class OidcFlowIntegrationTest extends AbstractIntegrationTest {
 
         JsonNode tokenResponse = objectMapper.readTree(
                 tokenResult.getResponse().getContentAsString());
-        String accessToken = tokenResponse.get("access_token").asText();
-        String idToken = tokenResponse.get("id_token").asText();
+        String accessToken = tokenResponse.get("access_token").asString();
+        String idToken = tokenResponse.get("id_token").asString();
         assertThat(accessToken).isNotEmpty();
 
         // Verify role claim in id_token payload
@@ -221,13 +223,14 @@ class OidcFlowIntegrationTest extends AbstractIntegrationTest {
                 .andReturn();
 
         JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
-        String accessToken = body.get("access_token").asText();
+        String accessToken = body.get("access_token").asString();
         String payload = new String(
                 Base64.getUrlDecoder().decode(accessToken.split("\\.")[1]),
                 StandardCharsets.UTF_8);
         // device-service is client_kind='sso', so NO device_id claim must be emitted.
-        assertThat(payload).doesNotContain("device_id");
-        assertThat(payload).contains("clients:admin");
+        assertThat(payload)
+                .doesNotContain("device_id")
+                .contains("clients:admin");
     }
 
     @Test

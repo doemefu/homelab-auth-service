@@ -49,7 +49,7 @@ public class ClientKindLookup {
                     "SELECT client_kind FROM oauth2_registered_client WHERE id = ?",
                     String.class,
                     registeredClientId);
-        } catch (EmptyResultDataAccessException e) {
+        } catch (EmptyResultDataAccessException _) {
             return null;
         }
     }

@@ -58,6 +58,7 @@ public class DeviceClientService {
 
         String plaintextSecret = generateSecret();
         String hashedSecret = passwordEncoder.encode(plaintextSecret);
+        assert hashedSecret != null;
         if (!hashedSecret.startsWith(BCRYPT_PREFIX)) {
             // DelegatingPasswordEncoder must emit a {bcrypt} prefix for the BCrypt
             // delegate to match on /oauth2/token authentication. Fail-fast to avoid
@@ -123,7 +124,7 @@ public class DeviceClientService {
                             rs.getTimestamp("client_id_issued_at").toInstant(),
                             splitScopes(rs.getString("scopes"))),
                     CLIENT_KIND_DEVICE, clientId);
-        } catch (EmptyResultDataAccessException e) {
+        } catch (EmptyResultDataAccessException _) {
             throw new ResourceNotFoundException("Device client '" + clientId + "' not found");
         }
     }
@@ -142,7 +143,7 @@ public class DeviceClientService {
                     "SELECT id FROM oauth2_registered_client "
                             + "WHERE client_id = ? AND client_kind = ?",
                     String.class, clientId, CLIENT_KIND_DEVICE);
-        } catch (EmptyResultDataAccessException e) {
+        } catch (EmptyResultDataAccessException _) {
             return;
         }
         if (id == null) {

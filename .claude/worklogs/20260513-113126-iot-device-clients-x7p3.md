@@ -218,3 +218,36 @@ Aggregate: `tests=88 errors=0 skipped=0 failures=0`.
 - Mosquitto: configure JWT plugin to use `device_id` claim per `infrastructure/053-mqtt-device-authentication.md`.
 
 **Memory entry added at top of `.claude/memory/MEMORY.md`:** yes — plus two new feedback files: `feedback_method_security_required.md` and `feedback_ss7_jwt_scope_shape.md`.
+
+---
+
+## 7. follow-up: SonarQube triage (2026-05-13, post-ship)
+
+User shared a SonarQube report after shipping. Plan + triage at
+`~/.claude/plans/implement-docs-spec-iot-device-clients-m-cozy-sedgewick.md`.
+
+**Fixed inline (9 items, all within this branch's diff):**
+
+| File:line | Rule | Change |
+|-----------|------|--------|
+| `ClientKindLookup.java:52` | S7467 | `catch (… e)` → `catch (… _)` |
+| `DeviceClientService.java:126` | S7467 | `catch (… e)` → `catch (… _)` (in `get`) |
+| `DeviceClientService.java:145` | S7467 | `catch (… e)` → `catch (… _)` (in `delete`) |
+| `DeviceClientLifecycleIT.java:78,96,104,108` | S1874 | `JsonNode.asText()` → `asString()` (×4) |
+| `OidcFlowIntegrationTest.java:224` | S1874 | `asText()` → `asString()` in new test |
+| `OidcFlowIntegrationTest.java:229–230` | S5853 | Chained `assertThat(payload).doesNotContain(...).contains(...)` |
+
+Verification: `./mvnw verify` → `tests=88 errors=0 skipped=0 failures=0` (unchanged from ship).
+
+**Deferred to a separate cleanup PR (out of scope per CLAUDE.md "minimize diff size"):**
+
+| File / area | Rule(s) | Reason for deferral |
+|-------------|---------|----------------------|
+| `AbstractIntegrationTest.java:17,55` | S1874 | Testcontainers `PostgreSQLContainer` API rename — pre-existing, requires verifying the new constructor and CI assumptions. |
+| `AuthorizationServerConfig.java:58,96` | S112, S1130 | `throws Exception` on the filter-chain method — Spring's `HttpSecurity.build()` actually throws Exception; narrowing would be a non-trivial refactor. Pre-existing. |
+| `FlywayMigrationTest.java:16` | S5976 | Could parameterize the 4 table-exists tests, but my contribution was 2 of them; the rule fires because of the count, not because of a regression. Moderate refactor — defer. |
+| `OidcFlowIntegrationTest.java:187,188` | S1874 | Pre-existing `.asText()` in `fullAuthCodeFlowIssuesTokens`. |
+| `OidcUserInfoMapperTest.java` | S5838 | File not modified this session — pure drive-by. |
+| `SecurityConfig.java:38,70,72,94` | S112/S1130/S1192 | `throws Exception` + duplicated `"/login"` literal — pre-existing; I only added `@EnableMethodSecurity` and the merged converter, not the flagged lines. |
+
+These should be picked up in a follow-up sweep PR; no urgency.

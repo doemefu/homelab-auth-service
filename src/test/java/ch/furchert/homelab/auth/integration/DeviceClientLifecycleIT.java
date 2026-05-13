@@ -75,7 +75,7 @@ class DeviceClientLifecycleIT extends AbstractIntegrationTest {
 
         JsonNode createBody = objectMapper.readTree(
                 createResult.getResponse().getContentAsString());
-        String plaintextSecret = createBody.get("clientSecret").asText();
+        String plaintextSecret = createBody.get("clientSecret").asString();
         assertThat(plaintextSecret).isNotBlank();
 
         // Step 2: Mint a client_credentials access token using basic auth.
@@ -93,7 +93,7 @@ class DeviceClientLifecycleIT extends AbstractIntegrationTest {
 
         JsonNode tokenBody = objectMapper.readTree(
                 tokenResult.getResponse().getContentAsString());
-        String accessToken = tokenBody.get("access_token").asText();
+        String accessToken = tokenBody.get("access_token").asString();
         assertThat(accessToken.split("\\.")).hasSize(3);
 
         // Decode payload — assert device_id and scope claims.
@@ -101,11 +101,11 @@ class DeviceClientLifecycleIT extends AbstractIntegrationTest {
                 Base64.getUrlDecoder().decode(accessToken.split("\\.")[1]),
                 StandardCharsets.UTF_8);
         JsonNode payload = objectMapper.readTree(payloadJson);
-        assertThat(payload.get("device_id").asText()).isEqualTo("terra-lc");
+        assertThat(payload.get("device_id").asString()).isEqualTo("terra-lc");
         // The JWT scope claim is encoded as an array by Spring Authorization Server.
         JsonNode scopeNode = payload.get("scope");
         assertThat(scopeNode.isArray()).as("scope claim is an array").isTrue();
-        assertThat(scopeNode).extracting(JsonNode::asText)
+        assertThat(scopeNode).extracting(JsonNode::asString)
                 .containsExactlyInAnyOrder("mqtt:pub", "mqtt:sub");
 
         // Step 3: DELETE the client — must remove the registered_client row and
