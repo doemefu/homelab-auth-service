@@ -13,7 +13,8 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class OidcUserInfoMapperTest {
 
@@ -89,7 +90,7 @@ class OidcUserInfoMapperTest {
         when(userRepository.findByUsername("ghost")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> mapper.apply(contextFor("ghost")))
-            .isInstanceOf(org.springframework.security.core.userdetails.UsernameNotFoundException.class);
+                .isInstanceOf(org.springframework.security.core.userdetails.UsernameNotFoundException.class);
     }
 
     private User userWith(String username, String email, Role role) {

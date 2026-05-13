@@ -10,4 +10,5 @@ public record UpdateUserRequest(
         @Email @Size(max = 100) String email,
         Role role,
         @Pattern(regexp = "ACTIVE|INACTIVE") String status
-) {}
+) {
+}

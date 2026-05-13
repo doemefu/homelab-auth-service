@@ -38,6 +38,11 @@ Current migrations:
 - **V2** — Widens `password_hash` to `VARCHAR(255)`, resizes `refresh_tokens.token` to `VARCHAR(64)` (SHA-256 hashes), converts all timestamps to `TIMESTAMPTZ`. Truncates existing refresh tokens (incompatible format after hashing change).
 - **V3** — Creates `oauth2_authorization` and `oauth2_authorization_consent` tables for Spring Authorization Server token storage.
 - **V4** — Drops the legacy `refresh_tokens` table.
+- **V5** — Creates `oauth2_registered_client` (Spring AS JDBC schema) with extension column `client_kind VARCHAR(20) NOT NULL DEFAULT 'sso'`. Switches the registered-client repository from in-memory to JDBC.
+
+### V5 rollback path
+
+V5 is forward-only. Emergency rollback requires dropping `oauth2_registered_client` AND downgrading the auth-service image — both seeded SSO clients and any registered device clients are wiped. The next boot of the older image will reseed YAML SSO clients from in-memory config; **device clients are lost**.
 
 **Never edit or delete existing `V*.sql` migration files.** Flyway checksums will fail.
 
@@ -68,7 +73,60 @@ Then remove `FLYWAY_BASELINE_ON_MIGRATE` from the deployment. Leaving `true` per
 
 ---
 
-## Adding a New OIDC Client
+## Device Client Runbooks
+
+Device OAuth2 clients (`client_kind='device'`) are managed at runtime via `/api/v1/clients`; no redeploy required. SSO clients are seeded once from YAML on first boot.
+
+### Register a new device client
+
+```bash
+ADMIN_JWT=$(...)  # acquire via OIDC auth_code flow as an ADMIN user
+curl -X POST -H "Authorization: Bearer $ADMIN_JWT" \
+  -H 'Content-Type: application/json' \
+  -d '{"clientId":"terra1","description":"Greenhouse 1"}' \
+  https://auth.furchert.ch/api/v1/clients
+# → 201 { "clientId": "terra1", "clientSecret": "<plaintext, one-time>", … }
+```
+
+Capture the `clientSecret` from the response immediately — it is never shown again.
+
+### Revoke a device client
+
+```bash
+curl -X DELETE -H "Authorization: Bearer $ADMIN_JWT" \
+  https://auth.furchert.ch/api/v1/clients/terra1
+# → 204 (idempotent; returns 204 even if the clientId never existed)
+```
+
+**Revocation is eventual.** Deleting a client removes the registration and revokes AS-side authorizations, but already-issued JWTs remain valid at Mosquitto until they expire (`access-token-ttl-seconds`, default 3600). For immediate revocation, rotate the auth-service RSA key (separate runbook).
+
+DELETE refuses to remove SSO clients silently — the row is preserved and the response is still `204`. Verify with:
+
+```sql
+SELECT client_id, client_kind FROM oauth2_registered_client ORDER BY client_id_issued_at;
+```
+
+### Inspect device clients via psql
+
+```bash
+kubectl port-forward -n apps svc/postgres 5432:5432 &
+PGPASSWORD=… psql -h localhost -U auth -d homelabdb -c \
+  "SELECT client_id, client_kind, client_id_issued_at FROM oauth2_registered_client WHERE client_kind = 'device';"
+```
+
+### Manual psql edits to `client_kind` need a restart
+
+`auth-service` caches the `client_kind` column per registered client in memory. After any direct `UPDATE oauth2_registered_client SET client_kind = ...` via psql, run:
+
+```bash
+kubectl rollout restart deployment/auth-service -n apps
+```
+
+Otherwise newly-tagged "device" clients will not receive the `device_id` JWT claim until restart (or vice versa). The cache assumes a single auth-service replica.
+
+---
+
+## Adding a New OIDC Client (SSO)
 
 1. Choose a client secret and prepare the encoded value for the K8s Secret.
    The env var must contain the full Spring Security encoded form:
@@ -112,29 +170,35 @@ Then remove `FLYWAY_BASELINE_ON_MIGRATE` from the deployment. Leaving `true` per
 
 ## Rotating a Client Secret
 
-1. Prepare the new encoded secret (the env var must include the `{id}` prefix):
+> **Behaviour change since V5:** Registered clients now live in the `oauth2_registered_client` table. `StaticClientSeeder` runs once on first boot and is skip-if-exists, so **simply updating the K8s Secret env var no longer rotates the persisted client secret**. Update the DB directly:
+
+1. Prepare the new encoded secret (must include the `{id}` prefix):
    ```bash
-   # Simplest — no hashing:
-   # value to store: {noop}<new-plaintext-secret>
-   #
-   # More secure — BCrypt hash:
-   htpasswd -bnBC 12 "" <new-secret> | tr -d ':\n'
-   # prefix the output: {bcrypt}$2a$12$...
+   # {noop}<new-plaintext-secret>           — simplest, no hashing
+   htpasswd -bnBC 12 "" <new-secret> | tr -d ':\n'   # then prefix: {bcrypt}$2a$12$...
    ```
 
-2. Update the K8s Secret with the new encoded value:
+2. Update the row in Postgres:
+   ```bash
+   kubectl port-forward -n apps svc/postgres 5432:5432 &
+   PGPASSWORD=… psql -h localhost -U auth -d homelabdb -c \
+     "UPDATE oauth2_registered_client SET client_secret = '{noop}<new-plaintext-secret>' \
+      WHERE client_id = 'grafana';"
+   ```
+
+3. Also update the K8s Secret env var so the YAML stays consistent for fresh deploys / disaster-recovery reseeds:
    ```bash
    kubectl patch secret homelab-auth-secrets -n apps \
      --type merge \
      -p '{"stringData":{"GRAFANA_CLIENT_SECRET":"{noop}<new-plaintext-secret>"}}'
    ```
 
-4. Restart the pod:
+4. Restart auth-service (Spring AS reads `oauth2_registered_client` on each request via `JdbcRegisteredClientRepository`, so this is for safety, not strictly required):
    ```bash
    kubectl rollout restart deployment/auth-service -n apps
    ```
 
-After restart, update the client configuration in the consuming service (Grafana, Home Assistant, etc.) to use the new secret.
+After restart, update the consuming service (Grafana, Home Assistant, etc.) to use the new secret.
 
 ---
 

@@ -15,16 +15,40 @@ class FlywayMigrationTest extends AbstractIntegrationTest {
     @Test
     void oauth2AuthorizationTableExists() {
         Integer count = jdbcTemplate.queryForObject(
-            "SELECT COUNT(*) FROM information_schema.tables " +
-            "WHERE table_schema = 'public' AND table_name = 'oauth2_authorization'", Integer.class);
+                "SELECT COUNT(*) FROM information_schema.tables " +
+                        "WHERE table_schema = 'public' AND table_name = 'oauth2_authorization'", Integer.class);
         assertThat(count).isEqualTo(1);
     }
 
     @Test
     void oauth2AuthorizationConsentTableExists() {
         Integer count = jdbcTemplate.queryForObject(
-            "SELECT COUNT(*) FROM information_schema.tables " +
-            "WHERE table_schema = 'public' AND table_name = 'oauth2_authorization_consent'", Integer.class);
+                "SELECT COUNT(*) FROM information_schema.tables " +
+                        "WHERE table_schema = 'public' AND table_name = 'oauth2_authorization_consent'", Integer.class);
         assertThat(count).isEqualTo(1);
+    }
+
+    @Test
+    void oauth2RegisteredClientTableExists() {
+        Integer count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.tables " +
+                        "WHERE table_schema = 'public' AND table_name = 'oauth2_registered_client'", Integer.class);
+        assertThat(count).isEqualTo(1);
+    }
+
+    @Test
+    void oauth2RegisteredClientHasClientKindColumnWithSsoDefault() {
+        // The V5 migration adds client_kind VARCHAR(20) NOT NULL DEFAULT 'sso'.
+        Integer columnCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.columns " +
+                        "WHERE table_schema = 'public' AND table_name = 'oauth2_registered_client' " +
+                        "AND column_name = 'client_kind'", Integer.class);
+        assertThat(columnCount).isEqualTo(1);
+
+        String columnDefault = jdbcTemplate.queryForObject(
+                "SELECT column_default FROM information_schema.columns " +
+                        "WHERE table_schema = 'public' AND table_name = 'oauth2_registered_client' " +
+                        "AND column_name = 'client_kind'", String.class);
+        assertThat(columnDefault).contains("sso");
     }
 }

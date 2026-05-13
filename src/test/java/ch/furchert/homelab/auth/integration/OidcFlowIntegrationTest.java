@@ -28,10 +28,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 class OidcFlowIntegrationTest extends AbstractIntegrationTest {
 
-    @Autowired MockMvc mockMvc;
-    @Autowired UserRepository userRepository;
-    @Autowired PasswordEncoder passwordEncoder;
-    @Autowired ObjectMapper objectMapper;
+    @Autowired
+    MockMvc mockMvc;
+    @Autowired
+    UserRepository userRepository;
+    @Autowired
+    PasswordEncoder passwordEncoder;
+    @Autowired
+    ObjectMapper objectMapper;
 
     @BeforeEach
     void createTestUser() {
@@ -49,12 +53,12 @@ class OidcFlowIntegrationTest extends AbstractIntegrationTest {
     @Test
     void oidcDiscoveryEndpointIsReachable() throws Exception {
         mockMvc.perform(get("/.well-known/openid-configuration"))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.issuer").value("https://auth.test.local"))
-            .andExpect(jsonPath("$.authorization_endpoint").exists())
-            .andExpect(jsonPath("$.token_endpoint").exists())
-            .andExpect(jsonPath("$.jwks_uri").exists())
-            .andExpect(jsonPath("$.userinfo_endpoint").exists());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.issuer").value("https://auth.test.local"))
+                .andExpect(jsonPath("$.authorization_endpoint").exists())
+                .andExpect(jsonPath("$.token_endpoint").exists())
+                .andExpect(jsonPath("$.jwks_uri").exists())
+                .andExpect(jsonPath("$.userinfo_endpoint").exists());
     }
 
     @Test
@@ -62,16 +66,16 @@ class OidcFlowIntegrationTest extends AbstractIntegrationTest {
         var client = clientRepo.findByClientId("test-client");
         assertThat(client).isNotNull();
         assertThat(client.getScopes())
-            .as("Registered client 'test-client' scopes")
-            .containsExactlyInAnyOrder("openid", "profile", "email");
+                .as("Registered client 'test-client' scopes")
+                .containsExactlyInAnyOrder("openid", "profile", "email");
     }
 
     @Test
     void jwksEndpointReturnsPublicKey() throws Exception {
         mockMvc.perform(get("/oauth2/jwks"))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.keys[0].kid").value("auth-service-v1"))
-            .andExpect(jsonPath("$.keys[0].kty").value("RSA"));
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.keys[0].kid").value("auth-service-v1"))
+                .andExpect(jsonPath("$.keys[0].kty").value("RSA"));
     }
 
     @Test
@@ -85,23 +89,23 @@ class OidcFlowIntegrationTest extends AbstractIntegrationTest {
         // We use .param() for decoded values + a RequestPostProcessor to set the
         // raw query string so Spring AS can find the parameter keys.
         mockMvc.perform(get("/oauth2/authorize")
-                .param("response_type", "code")
-                .param("client_id", "test-client")
-                .param("redirect_uri", "https://app.test.local/callback")
-                .param("scope", "openid profile email")
-                .param("state", "test-state")
-                .param("code_challenge", codeChallenge)
-                .param("code_challenge_method", "S256")
-                .with(request -> {
-                    request.setQueryString(buildQueryString(codeChallenge));
-                    return request;
-                }))
-            .andExpect(status().is3xxRedirection())
-            .andExpect(result -> {
-                String redirectUrl = result.getResponse().getRedirectedUrl();
-                assertThat(redirectUrl).isNotNull();
-                assertThat(redirectUrl).contains("/login");
-            });
+                        .param("response_type", "code")
+                        .param("client_id", "test-client")
+                        .param("redirect_uri", "https://app.test.local/callback")
+                        .param("scope", "openid profile email")
+                        .param("state", "test-state")
+                        .param("code_challenge", codeChallenge)
+                        .param("code_challenge_method", "S256")
+                        .with(request -> {
+                            request.setQueryString(buildQueryString(codeChallenge));
+                            return request;
+                        }))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(result -> {
+                    String redirectUrl = result.getResponse().getRedirectedUrl();
+                    assertThat(redirectUrl).isNotNull();
+                    assertThat(redirectUrl).contains("/login");
+                });
     }
 
     @Test
@@ -111,30 +115,30 @@ class OidcFlowIntegrationTest extends AbstractIntegrationTest {
 
         // Step 1: GET /oauth2/authorize → 302 to /login
         MvcResult authorizeResult = mockMvc.perform(get("/oauth2/authorize")
-                .param("response_type", "code")
-                .param("client_id", "test-client")
-                .param("redirect_uri", "https://app.test.local/callback")
-                .param("scope", "openid profile email")
-                .param("state", "test-state")
-                .param("code_challenge", codeChallenge)
-                .param("code_challenge_method", "S256")
-                .with(request -> {
-                    request.setQueryString(buildQueryString(codeChallenge));
-                    return request;
-                }))
-            .andExpect(status().is3xxRedirection())
-            .andReturn();
+                        .param("response_type", "code")
+                        .param("client_id", "test-client")
+                        .param("redirect_uri", "https://app.test.local/callback")
+                        .param("scope", "openid profile email")
+                        .param("state", "test-state")
+                        .param("code_challenge", codeChallenge)
+                        .param("code_challenge_method", "S256")
+                        .with(request -> {
+                            request.setQueryString(buildQueryString(codeChallenge));
+                            return request;
+                        }))
+                .andExpect(status().is3xxRedirection())
+                .andReturn();
 
         MockHttpSession session = (MockHttpSession) authorizeResult.getRequest().getSession();
 
         // Step 2: POST /login with credentials
         MvcResult loginResult = mockMvc.perform(post("/login")
-                .param("username", "testuser")
-                .param("password", "password123")
-                .session(session)
-                .with(csrf()))
-            .andExpect(status().is3xxRedirection())
-            .andReturn();
+                        .param("username", "testuser")
+                        .param("password", "password123")
+                        .session(session)
+                        .with(csrf()))
+                .andExpect(status().is3xxRedirection())
+                .andReturn();
 
         session = (MockHttpSession) loginResult.getRequest().getSession();
         String loginRedirect = loginResult.getResponse().getRedirectedUrl();
@@ -144,20 +148,20 @@ class OidcFlowIntegrationTest extends AbstractIntegrationTest {
         // We cannot simply GET the loginRedirect URL because MockMvc re-encodes
         // query params (%20 / +), causing Spring AS scope validation to fail.
         MvcResult codeResult = mockMvc.perform(get("/oauth2/authorize")
-                .param("response_type", "code")
-                .param("client_id", "test-client")
-                .param("redirect_uri", "https://app.test.local/callback")
-                .param("scope", "openid profile email")
-                .param("state", "test-state")
-                .param("code_challenge", codeChallenge)
-                .param("code_challenge_method", "S256")
-                .session(session)
-                .with(request -> {
-                    request.setQueryString(buildQueryString(codeChallenge));
-                    return request;
-                }))
-            .andExpect(status().is3xxRedirection())
-            .andReturn();
+                        .param("response_type", "code")
+                        .param("client_id", "test-client")
+                        .param("redirect_uri", "https://app.test.local/callback")
+                        .param("scope", "openid profile email")
+                        .param("state", "test-state")
+                        .param("code_challenge", codeChallenge)
+                        .param("code_challenge_method", "S256")
+                        .session(session)
+                        .with(request -> {
+                            request.setQueryString(buildQueryString(codeChallenge));
+                            return request;
+                        }))
+                .andExpect(status().is3xxRedirection())
+                .andReturn();
 
         String callbackUrl = codeResult.getResponse().getRedirectedUrl();
         assertThat(callbackUrl).isNotNull().contains("code=").contains("state=test-state");
@@ -166,17 +170,17 @@ class OidcFlowIntegrationTest extends AbstractIntegrationTest {
 
         // Step 4: POST /oauth2/token — exchange code for tokens
         MvcResult tokenResult = mockMvc.perform(post("/oauth2/token")
-                .param("grant_type", "authorization_code")
-                .param("code", code)
-                .param("redirect_uri", "https://app.test.local/callback")
-                .param("code_verifier", codeVerifier)
-                .header("Authorization", "Basic " + Base64.getEncoder().encodeToString(
-                    "test-client:test-secret".getBytes(StandardCharsets.UTF_8))))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.access_token").exists())
-            .andExpect(jsonPath("$.id_token").exists())
-            .andExpect(jsonPath("$.token_type").value("Bearer"))
-            .andReturn();
+                        .param("grant_type", "authorization_code")
+                        .param("code", code)
+                        .param("redirect_uri", "https://app.test.local/callback")
+                        .param("code_verifier", codeVerifier)
+                        .header("Authorization", "Basic " + Base64.getEncoder().encodeToString(
+                                "test-client:test-secret".getBytes(StandardCharsets.UTF_8))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.access_token").exists())
+                .andExpect(jsonPath("$.id_token").exists())
+                .andExpect(jsonPath("$.token_type").value("Bearer"))
+                .andReturn();
 
         JsonNode tokenResponse = objectMapper.readTree(
                 tokenResult.getResponse().getContentAsString());
@@ -186,49 +190,77 @@ class OidcFlowIntegrationTest extends AbstractIntegrationTest {
 
         // Verify role claim in id_token payload
         String idTokenPayload = new String(
-            Base64.getUrlDecoder().decode(idToken.split("\\.")[1]), StandardCharsets.UTF_8);
+                Base64.getUrlDecoder().decode(idToken.split("\\.")[1]), StandardCharsets.UTF_8);
         assertThat(idTokenPayload).contains("\"role\"");
 
         // Step 5: GET /userinfo with access token
         mockMvc.perform(get("/userinfo")
-                .header("Authorization", "Bearer " + accessToken))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.sub").value("testuser"))
-            .andExpect(jsonPath("$.email").value("testuser@test.local"))
-            .andExpect(jsonPath("$.preferred_username").value("testuser"));
+                        .header("Authorization", "Bearer " + accessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.sub").value("testuser"))
+                .andExpect(jsonPath("$.email").value("testuser@test.local"))
+                .andExpect(jsonPath("$.preferred_username").value("testuser"));
+    }
+
+    @Test
+    void deviceServiceCanMintClientCredentialsToken() throws Exception {
+        // F7 — verifies device-service's added client_credentials grant works
+        // without breaking the existing authorization_code path (covered above).
+        // Per memory feedback_mockmvc_querystring, the AS token endpoint reads
+        // form parameters from the request body via content() (POST is fine).
+        String basic = Base64.getEncoder().encodeToString(
+                "device-service:device-service-secret".getBytes(StandardCharsets.UTF_8));
+
+        MvcResult result = mockMvc.perform(post("/oauth2/token")
+                        .header("Authorization", "Basic " + basic)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_FORM_URLENCODED)
+                        .content("grant_type=client_credentials&scope=clients:admin"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.access_token").exists())
+                .andExpect(jsonPath("$.token_type").value("Bearer"))
+                .andReturn();
+
+        JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
+        String accessToken = body.get("access_token").asText();
+        String payload = new String(
+                Base64.getUrlDecoder().decode(accessToken.split("\\.")[1]),
+                StandardCharsets.UTF_8);
+        // device-service is client_kind='sso', so NO device_id claim must be emitted.
+        assertThat(payload).doesNotContain("device_id");
+        assertThat(payload).contains("clients:admin");
     }
 
     @Test
     void tokenEndpointRejectsInvalidCode() throws Exception {
         mockMvc.perform(post("/oauth2/token")
-                .param("grant_type", "authorization_code")
-                .param("code", "invalid-code")
-                .param("redirect_uri", "https://app.test.local/callback")
-                .param("code_verifier", "some-verifier")
-                .header("Authorization", "Basic " + Base64.getEncoder().encodeToString(
-                    "test-client:test-secret".getBytes(StandardCharsets.UTF_8))))
-            .andExpect(status().isBadRequest());
+                        .param("grant_type", "authorization_code")
+                        .param("code", "invalid-code")
+                        .param("redirect_uri", "https://app.test.local/callback")
+                        .param("code_verifier", "some-verifier")
+                        .header("Authorization", "Basic " + Base64.getEncoder().encodeToString(
+                                "test-client:test-secret".getBytes(StandardCharsets.UTF_8))))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
     void adminApiRequiresBearerToken() throws Exception {
         mockMvc.perform(get("/api/v1/users"))
-            .andExpect(status().isUnauthorized());
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
     void loginPageIsRendered() throws Exception {
         mockMvc.perform(get("/login"))
-            .andExpect(status().isOk())
-            .andExpect(content().contentTypeCompatibleWith("text/html"));
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith("text/html"));
     }
 
     @Test
     void oidcDiscoveryAdvertisesLogoutEndpoint() throws Exception {
         mockMvc.perform(get("/.well-known/openid-configuration"))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.end_session_endpoint").value(
-                org.hamcrest.Matchers.endsWith("/connect/logout")));
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.end_session_endpoint").value(
+                        org.hamcrest.Matchers.endsWith("/connect/logout")));
     }
 
     // --- helpers ---

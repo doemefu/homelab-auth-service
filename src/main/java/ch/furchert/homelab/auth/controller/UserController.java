@@ -29,14 +29,14 @@ public class UserController {
 
     @GetMapping("/{id}")
     public ResponseEntity<UserResponse> getUser(@PathVariable Long id,
-                                                 @AuthenticationPrincipal(expression = "subject") String username) {
+                                                @AuthenticationPrincipal(expression = "subject") String username) {
         boolean isAdmin = isAdmin();
         return ResponseEntity.ok(userService.getUser(id, username, isAdmin));
     }
 
     @PutMapping("/{id}")
     public ResponseEntity<UserResponse> updateUser(@PathVariable Long id,
-                                                    @Valid @RequestBody UpdateUserRequest request) {
+                                                   @Valid @RequestBody UpdateUserRequest request) {
         return ResponseEntity.ok(userService.updateUser(id, request));
     }
 
@@ -48,8 +48,8 @@ public class UserController {
 
     @PostMapping("/{id}/reset-password")
     public ResponseEntity<Void> resetPassword(@PathVariable Long id,
-                                               @Valid @RequestBody ResetPasswordRequest request,
-                                               @AuthenticationPrincipal(expression = "subject") String username) {
+                                              @Valid @RequestBody ResetPasswordRequest request,
+                                              @AuthenticationPrincipal(expression = "subject") String username) {
         boolean isAdmin = isAdmin();
         userService.resetPassword(id, request, username, isAdmin);
         return ResponseEntity.noContent().build();

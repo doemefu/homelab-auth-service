@@ -13,7 +13,9 @@ OIDC Identity Provider (Spring Authorization Server) for the doemefu homelab IoT
 - Authorization Code Flow with PKCE for Grafana, Home Assistant, n8n, and other clients
 - JWKS endpoint (`/oauth2/jwks`) for downstream services to validate tokens
 - User CRUD (create, read, update, delete, password reset) via admin API
-- Role-based access control: `USER`, `ADMIN`
+- Admin REST API for IoT device OAuth2 clients (`/api/v1/clients`) — `client_credentials` grant; JWTs carry a `device_id` claim consumed by the Mosquitto JWT plugin
+- JDBC-backed `RegisteredClientRepository`; static SSO clients seeded from YAML on first boot via `StaticClientSeeder`
+- Role-based access control: `USER`, `ADMIN`; scope-based authority `SCOPE_clients:admin` for service-to-service admin calls
 - Automatic purge of expired OAuth2 authorizations (hourly)
 
 **Does NOT:** talk to MQTT, InfluxDB, or any other service at runtime. Fully self-contained.
@@ -45,6 +47,19 @@ All user endpoints are prefixed `/api/v1`.
 | PUT | `/api/v1/users/{id}` | ADMIN | Update user |
 | DELETE | `/api/v1/users/{id}` | ADMIN | Delete user |
 | POST | `/api/v1/users/{id}/reset-password` | ADMIN or self | Reset password (self requires `currentPassword`) |
+
+### Device Client Admin API
+
+Manage IoT device OAuth2 clients (`client_kind='device'`). All endpoints accept either an `ADMIN` JWT or any JWT with the `SCOPE_clients:admin` authority (used by `device-service` for S2S calls).
+
+| Method | Path | Body / Params | Response |
+|--------|------|---------------|----------|
+| POST | `/api/v1/clients` | `{"clientId":"terra1","description":"…"}` (clientId pattern `[a-z0-9-]{3,32}`) | `201 {clientId, clientSecret (plaintext, one-time), scopes, createdAt}` |
+| GET | `/api/v1/clients` | — | `200 [{clientId, description, createdAt, scopes}]` (filters `client_kind='device'`) |
+| GET | `/api/v1/clients/{clientId}` | — | `200` single device client or `404` |
+| DELETE | `/api/v1/clients/{clientId}` | — | `204` (idempotent); refuses to delete SSO clients silently — the row is preserved |
+
+Device clients use the `client_credentials` grant with scopes `mqtt:pub mqtt:sub` and a 1-hour access-token TTL (configurable via `app.oidc.device-clients.access-token-ttl-seconds`). JWTs include a `device_id` claim equal to the `clientId`. Revocation is eventual: existing JWTs remain valid until `exp` after DELETE.
 
 ### Management & Docs
 

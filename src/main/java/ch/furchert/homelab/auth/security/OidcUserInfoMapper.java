@@ -23,13 +23,13 @@ public class OidcUserInfoMapper implements Function<OidcUserInfoAuthenticationCo
         String username = authorization.getPrincipalName();
 
         User user = userRepository.findByUsername(username)
-            .orElseThrow(() -> new UsernameNotFoundException("User not found: " + username));
+                .orElseThrow(() -> new UsernameNotFoundException("User not found: " + username));
 
         return OidcUserInfo.builder()
-            .subject(user.getUsername())
-            .email(user.getEmail())
-            .claim("preferred_username", user.getUsername())
-            .claim("role", user.getRole().name())
-            .build();
+                .subject(user.getUsername())
+                .email(user.getEmail())
+                .claim("preferred_username", user.getUsername())
+                .claim("role", user.getRole().name())
+                .build();
     }
 }
