@@ -158,6 +158,6 @@ No env vars added — device secrets are generated, not configured.
 ## Acceptance
 
 - `curl -u device-service:<secret> -d 'grant_type=client_credentials' .../oauth2/token` for a registered device client returns a JWT containing `device_id` and `scope: "mqtt:pub mqtt:sub"`.
-- `POST /api/v1/clients` followed by `DELETE` removes the client and invalidates outstanding tokens (Mosquitto rejects the JWT after delete + key cache invalidation interval).
+- `POST /api/v1/clients` followed by `DELETE` removes the client; new token requests fail immediately (the AS no longer recognises the `client_id`). JWTs already issued remain valid at Mosquitto until their `exp` (1 h TTL) — immediate revocation of outstanding tokens requires signing-key rotation.
 - `GET /api/v1/clients` returns only `client_kind='device'` rows.
 - Existing SSO flows (Grafana login, device-service Swagger SSO) are unchanged.
