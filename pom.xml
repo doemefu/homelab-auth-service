@@ -12,7 +12,22 @@
 	<artifactId>auth-service</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
 	<name>homelab-auth-service</name>
-	<description>JWT authentication service for the doemefu homelab IoT ecosystem</description>
+	<description>OIDC/OAuth2 authorization server and JWT authentication service for the doemefu homelab IoT ecosystem</description>
+	<url>https://github.com/doemefu/homelab-auth-service</url>
+
+	<developers>
+		<developer>
+			<id>doemefu</id>
+			<name>Dominic Furchert</name>
+			<url>https://github.com/doemefu</url>
+		</developer>
+	</developers>
+
+	<scm>
+		<url>https://github.com/doemefu/homelab-auth-service</url>
+		<connection>scm:git:git://github.com/doemefu/homelab-auth-service.git</connection>
+		<developerConnection>scm:git:ssh://git@github.com/doemefu/homelab-auth-service.git</developerConnection>
+	</scm>
 	<properties>
 		<java.version>25</java.version>
 	</properties>

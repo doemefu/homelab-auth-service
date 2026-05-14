@@ -35,10 +35,10 @@ This is 1 of 3 microservices. The other two (device-service, data-service) valid
 | Component | Version |
 |-----------|---------|
 | Java | 25 |
-| Spring Boot | 4.0.5 |
+| Spring Boot | 4.0.6 |
 | jjwt | 0.12.6 |
-| springdoc-openapi | 2.7.0 |
-| Testcontainers BOM | 2.0.4 (managed by Spring Boot 4.0.5) |
+| springdoc-openapi | 3.0.3 |
+| Testcontainers BOM | 2.0.5 (managed by Spring Boot 4.0.6) |
 
 ## Spring Boot 4.0 Notes
 
