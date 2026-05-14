@@ -21,8 +21,6 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -154,8 +152,10 @@ class DeviceClientServiceTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
     void get_unknownClient_throws404() {
-        when(jdbcTemplate.queryForObject(any(String.class), any(org.springframework.jdbc.core.RowMapper.class),
+        when(jdbcTemplate.queryForObject(any(String.class),
+                any(org.springframework.jdbc.core.RowMapper.class),
                 eq("device"), eq("ghost")))
                 .thenThrow(new EmptyResultDataAccessException(1));
 
