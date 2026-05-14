@@ -13,7 +13,8 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class OidcUserInfoMapperTest {
 
@@ -61,7 +62,7 @@ class OidcUserInfoMapperTest {
 
         OidcUserInfo info = mapper.apply(contextFor("dominic"));
 
-        assertThat(info.getClaims().get("preferred_username")).isEqualTo("dominic");
+        assertThat(info.getClaims()).containsEntry("preferred_username", "dominic");
     }
 
     @Test
@@ -71,7 +72,7 @@ class OidcUserInfoMapperTest {
 
         OidcUserInfo info = mapper.apply(contextFor("dominic"));
 
-        assertThat(info.getClaims().get("role")).isEqualTo("USER");
+        assertThat(info.getClaims()).containsEntry("role", "USER");
     }
 
     @Test
@@ -81,7 +82,7 @@ class OidcUserInfoMapperTest {
 
         OidcUserInfo info = mapper.apply(contextFor("admin"));
 
-        assertThat(info.getClaims().get("role")).isEqualTo("ADMIN");
+        assertThat(info.getClaims()).containsEntry("role", "ADMIN");
     }
 
     @Test
@@ -89,7 +90,7 @@ class OidcUserInfoMapperTest {
         when(userRepository.findByUsername("ghost")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> mapper.apply(contextFor("ghost")))
-            .isInstanceOf(org.springframework.security.core.userdetails.UsernameNotFoundException.class);
+                .isInstanceOf(org.springframework.security.core.userdetails.UsernameNotFoundException.class);
     }
 
     private User userWith(String username, String email, Role role) {

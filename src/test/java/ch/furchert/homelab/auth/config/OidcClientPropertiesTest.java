@@ -10,19 +10,20 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(classes = OidcClientPropertiesTest.Config.class)
 @TestPropertySource(properties = {
-    "app.oidc.issuer=https://auth.furchert.ch",
-    "app.oidc.clients[0].client-id=grafana",
-    "app.oidc.clients[0].client-secret={bcrypt}$2a$10$hashedvalue",
-    "app.oidc.clients[0].redirect-uris[0]=https://grafana.furchert.ch/login/generic_oauth",
-    "app.oidc.clients[0].post-logout-redirect-uris[0]=https://grafana.furchert.ch",
-    "app.oidc.clients[0].scopes[0]=openid",
-    "app.oidc.clients[0].scopes[1]=profile",
-    "app.oidc.clients[0].scopes[2]=email"
+        "app.oidc.issuer=https://auth.furchert.ch",
+        "app.oidc.clients[0].client-id=grafana",
+        "app.oidc.clients[0].client-secret={bcrypt}$2a$10$hashedvalue",
+        "app.oidc.clients[0].redirect-uris[0]=https://grafana.furchert.ch/login/generic_oauth",
+        "app.oidc.clients[0].post-logout-redirect-uris[0]=https://grafana.furchert.ch",
+        "app.oidc.clients[0].scopes[0]=openid",
+        "app.oidc.clients[0].scopes[1]=profile",
+        "app.oidc.clients[0].scopes[2]=email"
 })
 class OidcClientPropertiesTest {
 
     @EnableConfigurationProperties(OidcClientProperties.class)
-    static class Config {}
+    static class Config {
+    }
 
     @Autowired
     OidcClientProperties props;
@@ -46,18 +47,18 @@ class OidcClientPropertiesTest {
     @Test
     void loadsRedirectUris() {
         assertThat(props.getClients().get(0).getRedirectUris())
-            .containsExactly("https://grafana.furchert.ch/login/generic_oauth");
+                .containsExactly("https://grafana.furchert.ch/login/generic_oauth");
     }
 
     @Test
     void loadsPostLogoutRedirectUris() {
         assertThat(props.getClients().get(0).getPostLogoutRedirectUris())
-            .containsExactly("https://grafana.furchert.ch");
+                .containsExactly("https://grafana.furchert.ch");
     }
 
     @Test
     void loadsScopes() {
         assertThat(props.getClients().get(0).getScopes())
-            .containsExactlyInAnyOrder("openid", "profile", "email");
+                .containsExactlyInAnyOrder("openid", "profile", "email");
     }
 }

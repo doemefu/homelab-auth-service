@@ -30,6 +30,10 @@ app:
     refresh-token-expiry: 604800000
   oidc:
     issuer: https://auth.furchert.ch
+    # Defaults applied when an admin creates a new IoT device client through /api/v1/clients.
+    device-clients:
+      access-token-ttl-seconds: 3600
+      allowed-scopes: [ mqtt:pub, mqtt:sub ]
     clients:
       - client-id: grafana
         # The env var must include the Spring Security {id} prefix, e.g. "{noop}secret" or "{bcrypt}$2a$...".
@@ -38,7 +42,7 @@ app:
           - https://grafana.furchert.ch/login/generic_oauth
         post-logout-redirect-uris:
           - https://grafana.furchert.ch
-        scopes: [openid, profile, email]
+        scopes: [ openid, profile, email ]
       - client-id: homeassistant
         # The env var must include the Spring Security {id} prefix, e.g. "{noop}secret" or "{bcrypt}$2a$...".
         client-secret: "${HA_CLIENT_SECRET}"
@@ -46,7 +50,7 @@ app:
           - https://ha.furchert.ch/auth/oidc/callback
         post-logout-redirect-uris:
           - https://ha.furchert.ch
-        scopes: [openid, profile, email]
+        scopes: [ openid, profile, email ]
       - client-id: device-service
         # The env var must include the Spring Security {id} prefix, e.g. "{noop}secret" or "{bcrypt}$2a$...".
         client-secret: "${DEVICE_SERVICE_CLIENT_SECRET}"
@@ -55,7 +59,11 @@ app:
           - http://localhost:8081/login/oauth2/code/device-service
         post-logout-redirect-uris:
           - https://device.furchert.ch
-        scopes: [openid, profile, email]
+        scopes: [ openid, profile, email, "clients:admin" ]
+        # device-service has both auth_code (for human admin SSO) and client_credentials
+        # (for service-to-service calls to /api/v1/clients). PKCE is only enforced
+        # on the auth_code endpoint, so requireProofKey=true is harmless for the S2S half.
+        grant-types: [ authorization_code, refresh_token, client_credentials ]
       - client-id: n8n
         # The env var must include the Spring Security {id} prefix, e.g. "{noop}secret" or "{bcrypt}$2a$...".
         client-secret: "${N8N_CLIENT_SECRET}"
@@ -63,7 +71,7 @@ app:
           - https://n8n.furchert.ch/rest/sso/oidc/callback
         post-logout-redirect-uris:
           - https://n8n.furchert.ch
-        scopes: [openid, profile, email]
+        scopes: [ openid, profile, email ]
       - client-id: litellm
         # The env var must include the Spring Security {id} prefix, e.g. "{noop}secret" or "{bcrypt}$2a$...".
         client-secret: "${LITELLM_CLIENT_SECRET}"
@@ -71,7 +79,7 @@ app:
           - https://ai.furchert.ch/sso/callback
         post-logout-redirect-uris:
           - https://ai.furchert.ch
-        scopes: [openid, profile, email]
+        scopes: [ openid, profile, email ]
 
 management:
   endpoints:

@@ -18,6 +18,13 @@
 - Pre-configured OIDC clients: `grafana`, `homeassistant`, `device-service`, `n8n`
 - Flyway V3 migration: creates `oauth2_authorization` and `oauth2_authorization_consent` tables for Spring Authorization Server
 - Flyway V4 migration: drops legacy `refresh_tokens` table
+- Flyway V5 migration: creates `oauth2_registered_client` (Spring AS JDBC schema) with extension column `client_kind VARCHAR(20) NOT NULL DEFAULT 'sso'`
+- `StaticClientSeeder` — idempotent one-shot bootstrap of YAML-defined SSO clients into the new `oauth2_registered_client` table on first boot
+- Admin REST API `POST/GET/DELETE /api/v1/clients` for IoT device client lifecycle, gated by `hasRole('ADMIN') or hasAuthority('SCOPE_clients:admin')`
+- `device_id` JWT claim emitted on `client_credentials` access tokens where `client_kind='device'` (consumed by Mosquitto JWT plugin)
+- `ResourceConflictException` → HTTP 409; `AuthorizationDeniedException`/`AccessDeniedException` → HTTP 403 in `GlobalExceptionHandler`
+- `@EnableMethodSecurity` enabled globally on `SecurityConfig` so `@PreAuthorize` works on controllers
+- `app.oidc.device-clients.access-token-ttl-seconds` (default 3600) and `allowed-scopes` config properties
 
 ### Changed
 
@@ -28,6 +35,9 @@
 - `PasswordEncoder` switched to `DelegatingPasswordEncoder` to support `{noop}`/`{bcrypt}` prefixes for OIDC client secrets
 - API filter chain is now stateless (no sessions); login form uses a separate stateful filter chain
 - OIDC client secret env vars must include the Spring Security `{id}` prefix (e.g. `{noop}secret`)
+- Registered clients moved from in-memory to JDBC (`oauth2_registered_client`); after first boot, YAML edits to client definitions are no-ops — manage via `psql` or `/api/v1/clients`
+- `device-service` OIDC client extended to multi-grant (`authorization_code` + `refresh_token` + `client_credentials`) with new `clients:admin` scope (for service-to-service calls to `/api/v1/clients`)
+- `JwtAuthenticationConverter` now emits both `ROLE_*` (from `role` claim) and `SCOPE_*` (from `scope` claim) authorities
 
 ### Removed
 

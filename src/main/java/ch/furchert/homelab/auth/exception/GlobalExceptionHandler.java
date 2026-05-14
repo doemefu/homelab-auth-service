@@ -5,7 +5,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authorization.AuthorizationDeniedException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -40,6 +42,17 @@ public class GlobalExceptionHandler {
                 .body(errorBody(HttpStatus.UNAUTHORIZED, "Unauthorized", null));
     }
 
+    /**
+     * @PreAuthorize failures raise AuthorizationDeniedException; legacy access
+     * decisions raise AccessDeniedException. Both must return 403 — otherwise
+     * the catch-all generic handler below maps them to 500.
+     */
+    @ExceptionHandler({AuthorizationDeniedException.class, AccessDeniedException.class})
+    public ResponseEntity<Map<String, Object>> handleAuthorizationDenied(RuntimeException ex) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(errorBody(HttpStatus.FORBIDDEN, "Forbidden", null));
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, Object>> handleIllegalArgument(IllegalArgumentException ex) {
         return ResponseEntity.badRequest().body(errorBody(HttpStatus.BAD_REQUEST, ex.getMessage(), null));
@@ -49,6 +62,12 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, Object>> handleNotFound(ResourceNotFoundException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(errorBody(HttpStatus.NOT_FOUND, ex.getMessage(), null));
+    }
+
+    @ExceptionHandler(ResourceConflictException.class)
+    public ResponseEntity<Map<String, Object>> handleConflict(ResourceConflictException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(errorBody(HttpStatus.CONFLICT, ex.getMessage(), null));
     }
 
     @ExceptionHandler(Exception.class)

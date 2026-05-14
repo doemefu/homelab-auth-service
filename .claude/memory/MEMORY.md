@@ -2,12 +2,30 @@
 
 <!-- Newest entry at the top. Each block: id, date, decision/status, worklog link, open items. -->
 
+- [Method security required](feedback_method_security_required.md) — @PreAuthorize is silently ignored without @EnableMethodSecurity; AuthorizationDeniedException needs explicit 403 mapping
+- [SS7 JWT scope shape](feedback_ss7_jwt_scope_shape.md) — JWT payload encodes `scope` as array, token response as string
 - [SS7 OAuth2 AS API](feedback_ss7_oauth2_api.md) — Use http.oauth2AuthorizationServer() not static authorizationServer()
 - [MockMvc query string](feedback_mockmvc_querystring.md) — MockMvc .param() doesn't set query string; use UriComponentsBuilder for GET AS endpoints
 - [Testcontainers lifecycle](feedback_testcontainers_lifecycle.md) — Use @Testcontainers + @Container, never static initializer — static breaks with multiple Spring contexts
 - [TokenCleanupScheduler SQL](feedback_cleanup_scheduler_sql.md) — COALESCE-to-epoch inside GREATEST matches all-NULL rows; always guard with IS NOT NULL
 - [OIDC client secret prefix](feedback_oidc_secret_prefix.md) — DelegatingPasswordEncoder requires {noop}/{bcrypt} prefix; missing prefix = BCrypt mismatch = silent auth failure
 - [Jackson 3 imports](feedback_jackson3_imports.md) — Project uses tools.jackson (Jackson 3), not com.fasterxml.jackson (Jackson 2)
+
+## 2026-05-13 — IoT Device OAuth2 Clients shipped (JDBC repo + admin API)
+
+**Decision:** Implemented `docs/SPEC-iot-device-clients.md`. Switched Spring AS `RegisteredClientRepository` from in-memory to JDBC via Flyway V5 (`oauth2_registered_client` + `client_kind` extension column). Added `StaticClientSeeder` (idempotent YAML→DB bootstrap), `/api/v1/clients` admin CRUD (gated by `hasRole('ADMIN') or hasAuthority('SCOPE_clients:admin')`), `device_id` JWT claim for `client_credentials` tokens with `client_kind='device'`, `ClientKindLookup` per-JVM cache. `device-service` client is now multi-grant (auth_code + refresh_token + client_credentials) with `clients:admin` scope. `@EnableMethodSecurity` enabled.
+**Worklog:** `.claude/worklogs/20260513-113126-iot-device-clients-x7p3.md`
+**Plan:** `~/.claude/plans/implement-docs-spec-iot-device-clients-m-cozy-sedgewick.md`
+**Spec:** `docs/SPEC-iot-device-clients.md`
+**Status:** done — 88/88 tests pass (`./mvnw verify`), pending commit by user
+**Plan-reviewer findings:** 3 blockers (F1 secret double-encode, F2 method-security off, F3 converter NPE) + 1 high-impact warning (F4 SSO-client delete data loss) all fixed and verified by dedicated tests before any code was committed.
+**Open:**
+- User must commit + push (workflow rule: never auto-commit)
+- Operator runbook change: SSO client-secret rotation now requires `psql UPDATE oauth2_registered_client SET client_secret = ...` (YAML env var alone is no-op after first boot) — documented in OPERATIONS.md
+- Operator runbook change: manual `client_kind` edits via psql require `kubectl rollout restart` (cache)
+- HA follow-up: replace `ClientKindLookup` in-memory cache if auth-service ever scales > 1 replica
+- GitHub project status: read:project scope was missing during session — move item to **Done** manually
+- Mosquitto JWT plugin config to consume `device_id` claim lives in `infrastructure/053-mqtt-device-authentication.md` (out of scope here)
 
 ## 2026-04-11 — PR #15 review fixes (10 Copilot + CodeQL findings)
 
