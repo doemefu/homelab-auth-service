@@ -115,8 +115,8 @@ public class SecurityConfig {
     /**
      * Emits both ROLE_* authorities (from the "role" claim used by user JWTs) and
      * SCOPE_* authorities (from the standard "scope" claim used by client_credentials
-     * tokens). Either converter may return null when the corresponding claim is
-     * absent — both branches are null-guarded.
+     * tokens). Both converters always return an empty collection (never null) when
+     * the corresponding claim is absent.
      */
     static JwtAuthenticationConverter jwtAuthenticationConverter() {
         JwtGrantedAuthoritiesConverter scopesConverter = new JwtGrantedAuthoritiesConverter();

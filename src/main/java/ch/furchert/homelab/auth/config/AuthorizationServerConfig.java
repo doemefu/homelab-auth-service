@@ -55,7 +55,7 @@ public class AuthorizationServerConfig {
      */
     @Bean
     @Order(1)
-    public SecurityFilterChain authorizationServerSecurityFilterChain(HttpSecurity http){
+    public SecurityFilterChain authorizationServerSecurityFilterChain(HttpSecurity http) {
         http
                 .securityMatcher("/oauth2/**", "/.well-known/**", "/userinfo", "/connect/**")
                 .oauth2AuthorizationServer(as -> as

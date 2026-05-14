@@ -20,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
+import java.util.Objects;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
@@ -57,8 +58,8 @@ public class DeviceClientService {
         }
 
         String plaintextSecret = generateSecret();
-        String hashedSecret = passwordEncoder.encode(plaintextSecret);
-        assert hashedSecret != null;
+        String hashedSecret = Objects.requireNonNull(passwordEncoder.encode(plaintextSecret),
+                "PasswordEncoder returned null");
         if (!hashedSecret.startsWith(BCRYPT_PREFIX)) {
             // DelegatingPasswordEncoder must emit a {bcrypt} prefix for the BCrypt
             // delegate to match on /oauth2/token authentication. Fail-fast to avoid

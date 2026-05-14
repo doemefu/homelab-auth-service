@@ -132,7 +132,7 @@ class OidcFlowIntegrationTest extends AbstractIntegrationTest {
         MockHttpSession session = (MockHttpSession) authorizeResult.getRequest().getSession();
 
         // Step 2: POST /login with credentials
-        assert session != null;
+        assertThat(session).isNotNull();
         MvcResult loginResult = mockMvc.perform(post("/login")
                         .param("username", "testuser")
                         .param("password", "password123")
@@ -148,7 +148,7 @@ class OidcFlowIntegrationTest extends AbstractIntegrationTest {
         // Step 3: Replay authorize request with authenticated session.
         // We cannot simply GET the loginRedirect URL because MockMvc re-encodes
         // query params (%20 / +), causing Spring AS scope validation to fail.
-        assert session != null;
+        assertThat(session).isNotNull();
         MvcResult codeResult = mockMvc.perform(get("/oauth2/authorize")
                         .param("response_type", "code")
                         .param("client_id", "test-client")
