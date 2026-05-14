@@ -11,6 +11,7 @@ import org.springframework.security.oauth2.server.authorization.client.Registere
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.security.oauth2.server.authorization.settings.ClientSettings;
 import org.springframework.security.oauth2.server.authorization.settings.TokenSettings;
+import org.jspecify.annotations.NonNull;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
@@ -40,7 +41,7 @@ public class StaticClientSeeder implements ApplicationRunner {
     private final JdbcTemplate jdbcTemplate;
 
     @Override
-    public void run(ApplicationArguments args) {
+    public void run(@NonNull ApplicationArguments args) {
         int seeded = 0;
         for (OidcClientProperties.ClientDefinition def : properties.getClients()) {
             if (registeredClientRepository.findByClientId(def.getClientId()) != null) {

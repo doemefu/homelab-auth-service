@@ -44,7 +44,7 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * @PreAuthorize failures raise AuthorizationDeniedException; legacy access
+     * {@code @PreAuthorize} failures raise AuthorizationDeniedException; legacy access
      * decisions raise AccessDeniedException. Both must return 403 — otherwise
      * the catch-all generic handler below maps them to 500.
      */
