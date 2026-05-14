@@ -2,6 +2,7 @@ package ch.furchert.homelab.auth.config;
 
 import ch.furchert.homelab.auth.security.OidcUserInfoMapper;
 import ch.furchert.homelab.auth.security.RsaKeyProvider;
+import ch.furchert.homelab.auth.service.ClientKindLookup;
 import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
@@ -19,29 +20,21 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.OAuth2AuthorizationServerConfiguration;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
-import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationService;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService;
 import org.springframework.security.oauth2.server.authorization.OAuth2TokenType;
-import org.springframework.security.oauth2.server.authorization.client.InMemoryRegisteredClientRepository;
-import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
+import org.springframework.security.oauth2.server.authorization.client.JdbcRegisteredClientRepository;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.security.oauth2.server.authorization.settings.AuthorizationServerSettings;
-import org.springframework.security.oauth2.server.authorization.settings.ClientSettings;
-import org.springframework.security.oauth2.server.authorization.settings.TokenSettings;
 import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext;
 import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenCustomizer;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
 
-import java.nio.charset.StandardCharsets;
 import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
-import java.time.Duration;
-import java.util.List;
-import java.util.UUID;
 
 @Configuration
 @EnableConfigurationProperties(OidcClientProperties.class)
@@ -51,7 +44,6 @@ public class AuthorizationServerConfig {
     private static final String RSA_KEY_ID = "auth-service-v1";
 
     private final OidcClientProperties oidcClientProperties;
-    private final RsaKeyProperties rsaKeyProperties;
     private final RsaKeyProvider rsaKeyProvider;
     private final OidcUserInfoMapper userInfoMapper;
 
@@ -63,26 +55,26 @@ public class AuthorizationServerConfig {
      */
     @Bean
     @Order(1)
-    public SecurityFilterChain authorizationServerSecurityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain authorizationServerSecurityFilterChain(HttpSecurity http){
         http
-            .securityMatcher("/oauth2/**", "/.well-known/**", "/userinfo", "/connect/**")
-            .oauth2AuthorizationServer(as -> as
-                .oidc(oidc -> oidc
-                    .userInfoEndpoint(userInfo -> userInfo.userInfoMapper(userInfoMapper))
-                    .providerConfigurationEndpoint(Customizer.withDefaults())
-                    .logoutEndpoint(Customizer.withDefaults())
+                .securityMatcher("/oauth2/**", "/.well-known/**", "/userinfo", "/connect/**")
+                .oauth2AuthorizationServer(as -> as
+                        .oidc(oidc -> oidc
+                                .userInfoEndpoint(userInfo -> userInfo.userInfoMapper(userInfoMapper))
+                                .providerConfigurationEndpoint(Customizer.withDefaults())
+                                .logoutEndpoint(Customizer.withDefaults())
+                        )
                 )
-            )
-            .authorizeHttpRequests(auth -> auth.anyRequest().authenticated())
-            .sessionManagement(session -> session
-                .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED)
-            )
-            .exceptionHandling(ex -> ex
-                .defaultAuthenticationEntryPointFor(
-                    new LoginUrlAuthenticationEntryPoint("/login"),
-                    new MediaTypeRequestMatcher(MediaType.TEXT_HTML)
+                .authorizeHttpRequests(auth -> auth.anyRequest().authenticated())
+                .sessionManagement(session -> session
+                        .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED)
                 )
-            );
+                .exceptionHandling(ex -> ex
+                        .defaultAuthenticationEntryPointFor(
+                                new LoginUrlAuthenticationEntryPoint("/login"),
+                                new MediaTypeRequestMatcher(MediaType.TEXT_HTML)
+                        )
+                );
 
         return http.build();
     }
@@ -103,40 +95,15 @@ public class AuthorizationServerConfig {
         return OAuth2AuthorizationServerConfiguration.jwtDecoder(jwkSource);
     }
 
+    /**
+     * JDBC-backed registered-client repository. SSO clients are seeded from
+     * application.yaml on first boot by {@link StaticClientSeeder}; device
+     * clients are created via the admin API. An empty DB on boot is valid:
+     * the seeder will populate it.
+     */
     @Bean
-    public RegisteredClientRepository registeredClientRepository() {
-        if (oidcClientProperties.getClients().isEmpty()) {
-            throw new IllegalStateException(
-                    "No OIDC clients configured. Set app.oidc.clients in application.yaml.");
-        }
-        List<RegisteredClient> clients = oidcClientProperties.getClients().stream()
-                .map(def -> {
-                    RegisteredClient.Builder builder = RegisteredClient
-                            .withId(UUID.nameUUIDFromBytes(
-                                    def.getClientId().getBytes(StandardCharsets.UTF_8)).toString())
-                            .clientId(def.getClientId())
-                            .clientSecret(def.getClientSecret())
-                            .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
-                            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
-                            .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
-                            .scopes(scopes -> scopes.addAll(def.getScopes()))
-                            .redirectUris(uris -> uris.addAll(def.getRedirectUris()))
-                            .clientSettings(ClientSettings.builder()
-                                    .requireAuthorizationConsent(false)
-                                    .requireProofKey(true)
-                                    .build())
-                            .tokenSettings(TokenSettings.builder()
-                                    .accessTokenTimeToLive(Duration.ofMillis(
-                                            rsaKeyProperties.getAccessTokenExpiry()))
-                                    .refreshTokenTimeToLive(Duration.ofMillis(
-                                            rsaKeyProperties.getRefreshTokenExpiry()))
-                                    .authorizationCodeTimeToLive(Duration.ofMinutes(5))
-                                    .build());
-                    def.getPostLogoutRedirectUris().forEach(builder::postLogoutRedirectUri);
-                    return builder.build();
-                })
-                .toList();
-        return new InMemoryRegisteredClientRepository(clients);
+    public RegisteredClientRepository registeredClientRepository(JdbcOperations jdbcOperations) {
+        return new JdbcRegisteredClientRepository(jdbcOperations);
     }
 
     @Bean
@@ -153,19 +120,38 @@ public class AuthorizationServerConfig {
                 .build();
     }
 
+    /**
+     * Adds JWT claims:
+     * <ul>
+     *   <li>{@code role}: stripped of the ROLE_ prefix, taken from the principal's first
+     *       authority. Only fires for user-driven grants (auth_code).</li>
+     *   <li>{@code device_id}: the clientId of the registered client, added ONLY for
+     *       client_credentials access tokens whose client_kind = 'device'. Mosquitto's
+     *       JWT plugin uses this for MQTT ACL evaluation.</li>
+     * </ul>
+     */
     @Bean
-    public OAuth2TokenCustomizer<JwtEncodingContext> tokenCustomizer() {
+    public OAuth2TokenCustomizer<JwtEncodingContext> tokenCustomizer(ClientKindLookup clientKindLookup) {
         return context -> {
             boolean isAccessToken = OAuth2TokenType.ACCESS_TOKEN.equals(context.getTokenType());
             boolean isIdToken = "id_token".equals(context.getTokenType().getValue());
             if (!isAccessToken && !isIdToken) return;
 
+            // role claim — only emit for ROLE_* authorities (user-driven grants)
             context.getPrincipal().getAuthorities().stream()
+                    .filter(a -> a.getAuthority().startsWith("ROLE_"))
                     .findFirst()
                     .ifPresent(a -> {
                         String role = a.getAuthority().replaceFirst("^ROLE_", "");
                         context.getClaims().claim("role", role);
                     });
+
+            // device_id claim — client_credentials access tokens for device clients
+            if (isAccessToken
+                    && AuthorizationGrantType.CLIENT_CREDENTIALS.equals(context.getAuthorizationGrantType())
+                    && clientKindLookup.isDevice(context.getRegisteredClient().getId())) {
+                context.getClaims().claim("device_id", context.getRegisteredClient().getClientId());
+            }
         };
     }
 }

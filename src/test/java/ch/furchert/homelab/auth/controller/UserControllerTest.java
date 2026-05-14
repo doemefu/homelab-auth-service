@@ -7,7 +7,6 @@ import ch.furchert.homelab.auth.dto.UserResponse;
 import ch.furchert.homelab.auth.entity.Role;
 import ch.furchert.homelab.auth.exception.ResourceNotFoundException;
 import ch.furchert.homelab.auth.service.UserService;
-import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -17,15 +16,18 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import tools.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.*;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.*;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(UserController.class)
 @Import(SecurityConfig.class)
@@ -95,7 +97,7 @@ class UserControllerTest {
 
         mockMvc.perform(get("/api/v1/users/1")
                         .with(jwt().jwt(j -> j.subject("testuser"))
-                                   .authorities(new SimpleGrantedAuthority("ROLE_USER"))))
+                                .authorities(new SimpleGrantedAuthority("ROLE_USER"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.username").value("testuser"));
     }
