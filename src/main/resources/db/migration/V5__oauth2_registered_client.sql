@@ -61,5 +61,8 @@ CREATE TABLE IF NOT EXISTS oauth2_registered_client
 ALTER TABLE oauth2_registered_client
     ADD COLUMN client_kind VARCHAR(20) NOT NULL DEFAULT 'sso';
 
+CREATE UNIQUE INDEX idx_oauth2_registered_client_client_id
+    ON oauth2_registered_client (client_id);
+
 CREATE INDEX idx_oauth2_registered_client_kind
     ON oauth2_registered_client (client_kind);

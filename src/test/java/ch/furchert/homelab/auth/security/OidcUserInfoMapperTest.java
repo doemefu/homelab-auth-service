@@ -62,7 +62,7 @@ class OidcUserInfoMapperTest {
 
         OidcUserInfo info = mapper.apply(contextFor("dominic"));
 
-        assertThat(info.getClaims().get("preferred_username")).isEqualTo("dominic");
+        assertThat(info.getClaims()).containsEntry("preferred_username", "dominic");
     }
 
     @Test
@@ -72,7 +72,7 @@ class OidcUserInfoMapperTest {
 
         OidcUserInfo info = mapper.apply(contextFor("dominic"));
 
-        assertThat(info.getClaims().get("role")).isEqualTo("USER");
+        assertThat(info.getClaims()).containsEntry("role", "USER");
     }
 
     @Test
@@ -82,7 +82,7 @@ class OidcUserInfoMapperTest {
 
         OidcUserInfo info = mapper.apply(contextFor("admin"));
 
-        assertThat(info.getClaims().get("role")).isEqualTo("ADMIN");
+        assertThat(info.getClaims()).containsEntry("role", "ADMIN");
     }
 
     @Test

@@ -17,7 +17,9 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
@@ -105,8 +107,9 @@ class DeviceClientLifecycleIT extends AbstractIntegrationTest {
         // The JWT scope claim is encoded as an array by Spring Authorization Server.
         JsonNode scopeNode = payload.get("scope");
         assertThat(scopeNode.isArray()).as("scope claim is an array").isTrue();
-        assertThat(scopeNode).extracting(JsonNode::asString)
-                .containsExactlyInAnyOrder("mqtt:pub", "mqtt:sub");
+        List<String> scopeList = new ArrayList<>();
+        scopeNode.forEach(n -> scopeList.add(n.asString()));
+        assertThat(scopeList).containsExactlyInAnyOrder("mqtt:pub", "mqtt:sub");
 
         // Step 3: DELETE the client — must remove the registered_client row and
         // any oauth2_authorization rows that reference it.

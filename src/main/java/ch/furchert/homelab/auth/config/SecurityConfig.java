@@ -27,6 +27,9 @@ import java.util.Collection;
 @EnableMethodSecurity
 public class SecurityConfig {
 
+    private static final String LOGIN_URL = "/login";
+    private static final String ADMIN = "ADMIN";
+
     /**
      * Chain 2: stateless resource-server for the admin REST API.
      * CSRF is not required: Bearer tokens are sent via the Authorization header,
@@ -35,13 +38,13 @@ public class SecurityConfig {
      */
     @Bean
     @Order(2)
-    public SecurityFilterChain apiSecurityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain apiSecurityFilterChain(HttpSecurity http) {
         http
                 .securityMatcher("/api/v1/**")
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(HttpMethod.POST, "/api/v1/users").hasRole("ADMIN")
-                        .requestMatchers(HttpMethod.PUT, "/api/v1/users/**").hasRole("ADMIN")
-                        .requestMatchers(HttpMethod.DELETE, "/api/v1/users/**").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/api/v1/users").hasRole(ADMIN)
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/users/**").hasRole(ADMIN)
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/users/**").hasRole(ADMIN)
                         // /api/v1/clients/** uses method-level @PreAuthorize on the controller
                         // (role ADMIN OR scope clients:admin). The filter chain only enforces
                         // authentication; method security enforces the exact rule.
@@ -67,15 +70,15 @@ public class SecurityConfig {
      */
     @Bean
     @Order(3)
-    public SecurityFilterChain loginSecurityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain loginSecurityFilterChain(HttpSecurity http) {
         http
-                .securityMatcher("/login", "/actuator/**", "/swagger-ui.html", "/swagger-ui/**", "/api-docs", "/api-docs/**")
+                .securityMatcher(LOGIN_URL, "/actuator/**", "/swagger-ui.html", "/swagger-ui/**", "/api-docs", "/api-docs/**")
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/login", "/actuator/health", "/actuator/info").permitAll()
+                        .requestMatchers(LOGIN_URL, "/actuator/health", "/actuator/info").permitAll()
                         .anyRequest().authenticated()
                 )
                 .formLogin(form -> form
-                        .loginPage("/login")
+                        .loginPage(LOGIN_URL)
                         .permitAll()
                 )
                 .sessionManagement(session -> session
@@ -91,7 +94,7 @@ public class SecurityConfig {
      */
     @Bean
     @Order(999)
-    public SecurityFilterChain catchAllSecurityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain catchAllSecurityFilterChain(HttpSecurity http) {
         http.authorizeHttpRequests(auth -> auth.anyRequest().denyAll());
         return http.build();
     }
@@ -128,8 +131,8 @@ public class SecurityConfig {
             Collection<GrantedAuthority> authorities = new ArrayList<>();
             Collection<GrantedAuthority> scopes = scopesConverter.convert(jwt);
             Collection<GrantedAuthority> roles = rolesConverter.convert(jwt);
-            if (scopes != null) authorities.addAll(scopes);
-            if (roles != null) authorities.addAll(roles);
+            authorities.addAll(scopes);
+            authorities.addAll(roles);
             return authorities;
         });
         return converter;

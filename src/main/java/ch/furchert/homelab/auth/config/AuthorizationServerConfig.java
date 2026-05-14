@@ -55,7 +55,7 @@ public class AuthorizationServerConfig {
      */
     @Bean
     @Order(1)
-    public SecurityFilterChain authorizationServerSecurityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain authorizationServerSecurityFilterChain(HttpSecurity http){
         http
                 .securityMatcher("/oauth2/**", "/.well-known/**", "/userinfo", "/connect/**")
                 .oauth2AuthorizationServer(as -> as
@@ -137,8 +137,9 @@ public class AuthorizationServerConfig {
             boolean isIdToken = "id_token".equals(context.getTokenType().getValue());
             if (!isAccessToken && !isIdToken) return;
 
-            // role claim — user-driven grants only (principal has authorities)
+            // role claim — only emit for ROLE_* authorities (user-driven grants)
             context.getPrincipal().getAuthorities().stream()
+                    .filter(a -> a.getAuthority().startsWith("ROLE_"))
                     .findFirst()
                     .ifPresent(a -> {
                         String role = a.getAuthority().replaceFirst("^ROLE_", "");
