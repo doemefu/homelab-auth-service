@@ -25,6 +25,10 @@ import java.util.UUID;
  * a bootstrap source only — post-bootstrap edits must go through psql or the
  * (future) admin API.
  * <p>
+ * client_kind: seeded rows inherit {@code 'sso'} from the V5 column default —
+ * no explicit write here. Device clients set {@code 'device'} via a side-write
+ * in {@code DeviceClientService}.
+ * <p>
  * Secret handling: YAML values are passed through verbatim — they MUST already
  * carry a DelegatingPasswordEncoder prefix ({noop}/{bcrypt}/...) per the
  * application.yaml comment on each client. Re-encoding a {bcrypt} value would

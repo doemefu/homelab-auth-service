@@ -135,6 +135,36 @@ class DeviceClientControllerTest {
     }
 
     @Test
+    void list_asPlainUser_returns403() throws Exception {
+        mockMvc.perform(get("/api/v1/clients")
+                        .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_USER"))))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(deviceClientService);
+    }
+
+    @Test
+    void get_asAdmin_returns200() throws Exception {
+        when(deviceClientService.get("terra1")).thenReturn(
+                new DeviceClientResponse("terra1", "Greenhouse 1", Instant.now(),
+                        List.of("mqtt:pub", "mqtt:sub")));
+
+        mockMvc.perform(get("/api/v1/clients/terra1")
+                        .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.clientId").value("terra1"));
+    }
+
+    @Test
+    void get_asPlainUser_returns403() throws Exception {
+        mockMvc.perform(get("/api/v1/clients/terra1")
+                        .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_USER"))))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(deviceClientService);
+    }
+
+    @Test
     void get_unknown_returns404() throws Exception {
         when(deviceClientService.get("ghost"))
                 .thenThrow(new ResourceNotFoundException("not found"));
