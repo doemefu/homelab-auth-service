@@ -1,219 +1,95 @@
 # homelab-auth-service
 
-OIDC Identity Provider (Spring Authorization Server) for the doemefu homelab IoT ecosystem.
-
-**Port:** 8080 | **Package:** `ch.furchert.homelab.auth` | **Database:** PostgreSQL
+**OIDC Identity Provider (Spring Authorization Server)** for the furchert.ch homelab IoT ecosystem.
 
 ---
 
-## Responsibilities
+## Documentation
 
-- OIDC Identity Provider (Spring Authorization Server) for SSO across furchert.ch homelab services
-- OIDC Discovery at `/.well-known/openid-configuration`
-- Authorization Code Flow with PKCE for Grafana, Home Assistant, n8n, and other clients
-- JWKS endpoint (`/oauth2/jwks`) for downstream services to validate tokens
-- User CRUD (create, read, update, delete, password reset) via admin API
-- Admin REST API for IoT device OAuth2 clients (`/api/v1/clients`) — `client_credentials` grant; JWTs carry a `device_id` claim consumed by the Mosquitto JWT plugin
-- JDBC-backed `RegisteredClientRepository`; static SSO clients seeded from YAML on first boot via `StaticClientSeeder`
-- Role-based access control: `USER`, `ADMIN`; scope-based authority `SCOPE_clients:admin` for service-to-service admin calls
-- Automatic purge of expired OAuth2 authorizations (hourly)
+This repository uses a structured documentation approach with four main guides at the repository root:
 
-**Does NOT:** talk to MQTT, InfluxDB, or any other service at runtime. Fully self-contained.
+| Document | Purpose | When to Read |
+|----------|---------|---------------|
+| **[OVERVIEW.md](./OVERVIEW.md)** | What this repo is about, context, features, URLs, APIs | First — understand the service |
+| **[INTERFACES.md](./INTERFACES.md)** | How other services interact with auth-service | When integrating a new client |
+| **[DEPLOYMENT.md](./DEPLOYMENT.md)** | Deployment instructions, infrastructure, troubleshooting | When deploying to production |
+| **[CONTRIBUTING.md](./CONTRIBUTING.md)** | Development instructions, useful commands, patterns | When developing locally |
+| **[docs/DEVELOPMENT.md](./docs/DEVELOPMENT.md)** | Extended development guide | For detailed development reference |
 
 ---
 
-## API Reference
+## Quick Start
 
-### OIDC Endpoints
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| GET | `/.well-known/openid-configuration` | None | OIDC Discovery document |
-| GET | `/oauth2/authorize` | Session (form login) | Authorization endpoint |
-| POST | `/oauth2/token` | Client credentials (Basic) | Token endpoint |
-| GET | `/oauth2/jwks` | None | JSON Web Key Set |
-| GET | `/userinfo` | Bearer token | OIDC UserInfo endpoint |
-| POST | `/connect/logout` | Session | RP-Initiated Logout |
-| GET | `/login` | None | Login page |
-
-### User CRUD API
-
-All user endpoints are prefixed `/api/v1`.
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| POST | `/api/v1/users` | ADMIN | Create user |
-| GET | `/api/v1/users/{id}` | Bearer token (ADMIN or own ID) | Get user |
-| PUT | `/api/v1/users/{id}` | ADMIN | Update user |
-| DELETE | `/api/v1/users/{id}` | ADMIN | Delete user |
-| POST | `/api/v1/users/{id}/reset-password` | ADMIN or self | Reset password (self requires `currentPassword`) |
-
-### Device Client Admin API
-
-Manage IoT device OAuth2 clients (`client_kind='device'`). All endpoints accept either an `ADMIN` JWT or any JWT with the `SCOPE_clients:admin` authority (used by `device-service` for S2S calls).
-
-| Method | Path | Body / Params | Response |
-|--------|------|---------------|----------|
-| POST | `/api/v1/clients` | `{"clientId":"terra1","description":"…"}` (clientId pattern `[a-z0-9-]{3,32}`) | `201 {clientId, clientSecret (plaintext, one-time), scopes, createdAt}` |
-| GET | `/api/v1/clients` | — | `200 [{clientId, description, createdAt, scopes}]` (filters `client_kind='device'`) |
-| GET | `/api/v1/clients/{clientId}` | — | `200` single device client or `404` |
-| DELETE | `/api/v1/clients/{clientId}` | — | `204` (idempotent); refuses to delete SSO clients silently — the row is preserved |
-
-Device clients use the `client_credentials` grant with scopes `mqtt:pub mqtt:sub` and a 1-hour access-token TTL (configurable via `app.oidc.device-clients.access-token-ttl-seconds`). JWTs include a `device_id` claim equal to the `clientId`. Revocation is eventual: existing JWTs remain valid until `exp` after DELETE.
-
-### Management & Docs
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| GET | `/actuator/health` | None | K8s liveness/readiness |
-| GET | `/actuator/info` | None | Service info |
-| GET | `/swagger-ui.html` | Session (form login) | Swagger UI — user CRUD API |
-| GET | `/api-docs` | Session (form login) | OpenAPI JSON spec |
-
----
-
-## Local Development
-
-### Prerequisites
-
-- Java 25
-- Docker (for integration tests)
-- kubectl access to the K3s cluster
-
-### 1. Generate RSA keys (one-time)
+### Local Development
 
 ```bash
+# 1. Generate RSA keys
 mkdir -p src/main/resources/keys
 openssl genrsa -out src/main/resources/keys/private.pem 2048
 openssl rsa -in src/main/resources/keys/private.pem -pubout -out src/main/resources/keys/public.pem
 
-mkdir -p src/test/resources/keys
-openssl genrsa -out src/test/resources/keys/private.pem 2048
-openssl rsa -in src/test/resources/keys/private.pem -pubout -out src/test/resources/keys/public.pem
-```
-
-> **Never commit these files.** `src/main/resources/keys/` is in `.gitignore`. For cluster deployment, inject production keys via the `homelab-auth-rsa-keys` K8s Secret (see [K8s Deployment](#k8s-deployment)).
-
-### 2. Port-forward PostgreSQL
-
-```bash
+# 2. Port-forward PostgreSQL
 kubectl port-forward -n apps svc/postgresql 5432:5432
-```
 
-> **Note:** Some other repo docs may still refer to `svc/postgres`. Use the service name that exists in your cluster; for this setup, the expected service is `svc/postgresql`.
-### 3. Run
-
-```bash
+# 3. Set environment variables & run
 export DB_USERNAME=homelab
 export DB_PASSWORD=homelab
 ./mvnw spring-boot:run
 ```
 
-> The service connects to database `homelabdb` on `localhost:5432` (default in `application.yaml`). Ensure this database exists on the cluster PostgreSQL instance.
+### Deploy to Production
 
-### 4. Tests
-
-```bash
-./mvnw test          # Unit tests only (no Docker needed)
-./mvnw verify        # Full suite including integration tests (Docker required)
-```
+Push to `main` branch — **Flux CD handles everything automatically**.
 
 ---
 
-## Configuration
+## Quick Reference
 
-| Property | Env override | Default |
-|----------|-------------|---------|
-| `spring.datasource.username` | `DB_USERNAME` | — (required) |
-| `spring.datasource.password` | `DB_PASSWORD` | — (required) |
-| `app.jwt.private-key` | `APP_JWT_PRIVATE_KEY` | `classpath:keys/private.pem` |
-| `app.jwt.public-key` | `APP_JWT_PUBLIC_KEY` | `classpath:keys/public.pem` |
-| `app.oidc.issuer` | — | — (required; must match the public ingress URL exactly) |
-| `app.oidc.clients[0].client-secret` | `GRAFANA_CLIENT_SECRET` | — (required; must include `{id}` prefix, e.g. `{noop}secret`) |
-| `app.oidc.clients[1].client-secret` | `HA_CLIENT_SECRET` | — (required; must include `{id}` prefix, e.g. `{noop}secret`) |
-| `app.oidc.clients[2].client-secret` | `DEVICE_SERVICE_CLIENT_SECRET` | — (required; must include `{id}` prefix, e.g. `{noop}secret`) |
-| `app.oidc.clients[3].client-secret` | `N8N_CLIENT_SECRET` | — (required; must include `{id}` prefix, e.g. `{noop}secret`) |
-
-Expired OAuth2 authorizations are automatically purged every hour by `TokenCleanupScheduler`. No additional configuration required.
-
----
-
-## Bootstrap — First Admin User
-
-After first deploy, insert the initial admin via `psql`:
-
-```sql
--- Generate hash: htpasswd -bnBC 12 "" yourpassword | tr -d ':\n'
-INSERT INTO users (username, email, password_hash, role, status)
-VALUES ('admin', 'admin@homelab.local', '$2a$12$<bcrypt-hash>', 'ADMIN', 'ACTIVE');
-```
+| URL | Description |
+|-----|-------------|
+| `https://auth.furchert.ch/.well-known/openid-configuration` | OIDC Discovery |
+| `https://auth.furchert.ch/oauth2/authorize` | Authorization Endpoint |
+| `https://auth.furchert.ch/oauth2/token` | Token Endpoint |
+| `https://auth.furchert.ch/oauth2/jwks` | JWKS (Public Keys) |
+| `https://auth.furchert.ch/userinfo` | UserInfo Endpoint |
+| `https://auth.furchert.ch/api/v1/users` | User CRUD API (Admin) |
 
 ---
 
 ## Architecture
 
-This service is 1 of 3 microservices in the homelab IoT stack.
-
 ```
-auth-service   ──OIDC SSO──>  Grafana
-                    └──>  Home Assistant
-                    └──>  n8n
-                    └──JWKS──>  device-service
-                    └──JWKS──>  data-service
-```
-
-Other services validate tokens by fetching the RSA public key from `/oauth2/jwks` at startup — no runtime dependency on auth-service for every request. SSO is provided via OIDC Authorization Code Flow with PKCE.
-
----
-
-## K8s Deployment
-
-Manifests are in `k8s/`:
-- `k8s/deployment.yaml` — Deployment in namespace `apps`; image tag managed by Flux CD (do not edit the tag manually); mounts RSA keys from Secret `homelab-auth-rsa-keys`, reads DB credentials from Secret `homelab-db-credentials`
-- `k8s/service.yaml` — ClusterIP Service on port 8080
-- `k8s/kustomization.yaml` — Kustomize base consumed by Flux
-
-**Deployments are automated via Flux CD.** Push to `main` — CI builds a new `main-YYYYMMDDTHHmmss` image, Flux detects it within 5 min, commits the updated tag to this repo, and the cluster rolls out the new pod automatically.
-
-Required Secrets (must exist in namespace `apps` before first deploy):
-
-```bash
-# Database credentials
-kubectl create secret generic homelab-db-credentials -n apps \
-  --from-literal=username=<db-user> \
-  --from-literal=password=<db-pass>
-
-# RSA key pair
-kubectl create secret generic homelab-auth-rsa-keys -n apps \
-  --from-file=private.pem=<path-to-private.pem> \
-  --from-file=public.pem=<path-to-public.pem>
+auth-service (OIDC Identity Provider)
+├── OIDC SSO ├──> Grafana
+├── OIDC SSO ├──> Home Assistant
+├── OIDC SSO ├──> n8n
+├── OIDC SSO ├──> LiteLLM
+├── OIDC SSO ├──> device-service
+└── JWKS ──> device-service & data-service (token validation)
 ```
 
 ---
 
-## CI/CD
+## Deprecated Documentation
 
-GitHub Actions workflow at `.github/workflows/build.yml`:
+Old documentation files have been renamed with `_old` suffix:
+- `README_old.md`
+- `CONTRIBUTING_old.md`
+- `DEPLOYMENT_old.md`
+- `OPERATIONS_old.md`
 
-- **test** job: runs `./mvnw verify` on every push and PR to `main`, except pushes that only change files under `k8s/` (those are Flux CD tag-update commits and skipping them prevents a CI trigger loop)
-- **build-and-push** job: builds a multi-arch image (`linux/amd64` + `linux/arm64`) and pushes to `ghcr.io/doemefu/homelab-auth-service` — runs only on push to `main` after tests pass
-
-Two tags are pushed per build:
-- `<git-sha>` — content-addressable, retained for debugging
-- `main-YYYYMMDDTHHmmss` — timestamp tag used by Flux CD for automatic deployment
-
-The `latest` tag is not pushed. Flux CD selects the newest `main-*` tag via `ImagePolicy` and updates `k8s/deployment.yaml` automatically.
-
-Image registry: `ghcr.io/doemefu/homelab-auth-service`
+Their content has been migrated to the new documentation structure.
 
 ---
 
-## Related Repositories
+## Support
 
-| Repo | Description |
-|------|-------------|
-| [homelab](https://github.com/doemefu/homelab) | Infrastructure-as-Code — Ansible, K3s cluster, platform services (PostgreSQL, InfluxDB, Mosquitto) |
-| [homelab-device-service](https://github.com/doemefu/homelab-device-service) | Real-time IoT device management — MQTT subscriber, InfluxDB writer, WebSocket broadcast, scheduling |
-| homelab-data-service | Historical data queries (InfluxDB) + schedule CRUD (not yet created) |
+- **Issues:** GitHub Issues
+- **Discussions:** GitHub Discussions
+- **Status:** See [CHANGELOG.md](./CHANGELOG.md) for recent changes
 
-Full architecture docs (migration plan, current/target architecture, cross-service contracts): [homelab/docs/](https://github.com/doemefu/homelab/tree/main/docs)
+---
+
+## License
+
+MIT License — See [LICENSE](./LICENSE)
