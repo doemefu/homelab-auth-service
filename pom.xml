@@ -25,7 +25,7 @@
 
 	<scm>
 		<url>https://github.com/doemefu/homelab-auth-service</url>
-		<connection>scm:git:git://github.com/doemefu/homelab-auth-service.git</connection>
+		<connection>scm:git:https://github.com/doemefu/homelab-auth-service.git</connection>
 		<developerConnection>scm:git:ssh://git@github.com/doemefu/homelab-auth-service.git</developerConnection>
 	</scm>
 	<properties>
