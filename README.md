@@ -53,6 +53,7 @@ Push to `main` branch — **Flux CD handles everything automatically**.
 | `https://auth.furchert.ch/oauth2/jwks` | JWKS (Public Keys) |
 | `https://auth.furchert.ch/userinfo` | UserInfo Endpoint |
 | `https://auth.furchert.ch/api/v1/users` | User CRUD API (Admin) |
+| `https://auth.furchert.ch/api/v1/clients` | IoT device client API (Admin) |
 
 ---
 
@@ -67,18 +68,6 @@ auth-service (OIDC Identity Provider)
 ├── OIDC SSO ├──> device-service
 └── JWKS ──> device-service & data-service (token validation)
 ```
-
----
-
-## Deprecated Documentation
-
-Old documentation files have been renamed with `_old` suffix:
-- `README_old.md`
-- `CONTRIBUTING_old.md`
-- `DEPLOYMENT_old.md`
-- `OPERATIONS_old.md`
-
-Their content has been migrated to the new documentation structure.
 
 ---
 

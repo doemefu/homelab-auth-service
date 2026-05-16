@@ -37,7 +37,8 @@ auth-service (this service)
 |----------|---------|-------------|
 | **OIDC Provider** | OIDC Discovery | Endpoint at `/.well-known/openid-configuration` |
 | | Authorization Code Flow | With PKCE support for web/mobile clients |
-| | Refresh Tokens | Issued alongside access tokens |
+| | Client Credentials Flow | IoT device clients — short-lived MQTT JWT with `device_id` claim |
+| | Refresh Tokens | Issued alongside access tokens (SSO clients only) |
 | | UserInfo Endpoint | Returns standard OIDC claims + custom `role` claim |
 | | JWT Tokens | Signed with RSA-2048 keys |
 | | JWKS Endpoint | Public key rotation support via `/oauth2/jwks` |
@@ -75,7 +76,7 @@ auth-service (this service)
 |--------|------|------|-------------|
 | GET | `/.well-known/openid-configuration` | None | OIDC Discovery document |
 | GET | `/oauth2/authorize` | Session (form login) | Authorization endpoint — initiates OIDC flow |
-| POST | `/oauth2/token` | Client credentials (Basic) | Token endpoint — exchanges code for tokens |
+| POST | `/oauth2/token` | Client credentials (Basic) | Token endpoint — `authorization_code` (SSO) and `client_credentials` (IoT device) grants |
 | GET | `/oauth2/jwks` | None | JSON Web Key Set — public keys for token validation |
 | GET | `/userinfo` | Bearer token | OIDC UserInfo endpoint — returns user claims |
 | POST | `/connect/logout` | Session | RP-Initiated Logout — redirects to post-logout URL |
@@ -92,6 +93,18 @@ auth-service (this service)
 | PUT | `/api/v1/users/{id}` | ADMIN | Update user (username, email, role, status) |
 | DELETE | `/api/v1/users/{id}` | ADMIN | Delete user |
 | POST | `/api/v1/users/{id}/reset-password` | ADMIN or self | Reset password (self requires current password) |
+
+### Device Client API (v1)
+
+**Base Path:** `/api/v1/clients` — internal admin API for IoT device OAuth2
+client lifecycle. See [INTERFACES.md §8](./INTERFACES.md) for full details.
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/api/v1/clients` | ADMIN or `clients:admin` scope | Create a device client (returns one-time secret) |
+| GET | `/api/v1/clients` | ADMIN or `clients:admin` scope | List device clients (`client_kind='device'`) |
+| GET | `/api/v1/clients/{clientId}` | ADMIN or `clients:admin` scope | Get a device client, or `404` |
+| DELETE | `/api/v1/clients/{clientId}` | ADMIN or `clients:admin` scope | Delete a device client (idempotent) |
 
 ### Management & Documentation
 
@@ -141,9 +154,25 @@ Standard OIDC claims plus custom claims:
 }
 ```
 
+**Device client (`client_credentials`) tokens** carry a `device_id` claim
+instead of `role` — used by Mosquitto as the MQTT username:
+
+```json
+{
+  "sub": "terra1",
+  "aud": "terra1",
+  "scope": "mqtt:pub mqtt:sub",
+  "device_id": "terra1",
+  "iss": "https://auth.furchert.ch",
+  "iat": 1714234567,
+  "exp": 1714238167
+}
+```
+
 ### Token Expiry
 
 - **Access Token:** 15 minutes (configurable via `app.jwt.access-token-expiry`)
+- **Device Client Token:** 1 hour (`app.oidc.device-clients.access-token-ttl-seconds`), no refresh token
 - **Refresh Token:** 7 days (configurable via `app.jwt.refresh-token-expiry`)
 - **Authorization Code:** 5 minutes (hardcoded)
 

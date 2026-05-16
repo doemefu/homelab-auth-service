@@ -22,17 +22,7 @@ The primary documentation files are located at the repository root:
 
 | File | Purpose |
 |------|---------|
+| **[INDEX.md](./INDEX.md)** | This documentation index |
 | **[DEVELOPMENT.md](./DEVELOPMENT.md)** | Extended development guide with detailed instructions |
-
----
-
-## Deprecated Files
-
-Old documentation files have been renamed with `_old` suffix at the repository root:
-
-- `README_old.md`
-- `CONTRIBUTING_old.md`
-- `DEPLOYMENT_old.md`
-- `OPERATIONS_old.md`
-
-These files are kept for reference but their content has been migrated to the new documentation structure.
+| **[PLAN.md](./PLAN.md)** | Implementation plan |
+| **[SPEC-iot-device-clients.md](./SPEC-iot-device-clients.md)** | Spec — IoT device OAuth2 clients |

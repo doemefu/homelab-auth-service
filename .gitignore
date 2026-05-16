@@ -90,3 +90,4 @@ coverage/
 # Test RSA keys are tracked — not real credentials
 !src/test/resources/keys/
 !src/test/resources/keys/*.pem
+/inspections/

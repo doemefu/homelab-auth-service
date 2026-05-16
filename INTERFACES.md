@@ -36,7 +36,7 @@ All OIDC clients should use the following configuration:
 |------------|-----------|-------|
 | Authorization Code | ✅ Yes | With PKCE required |
 | Refresh Token | ✅ Yes | Issued automatically |
-| Client Credentials | ❌ No | Not supported |
+| Client Credentials | ✅ Yes | IoT device clients only — see §8 |
 | Password | ❌ No | Not supported |
 
 ### Required Scopes
@@ -295,6 +295,7 @@ The REST API uses **Bearer token authentication** with JWT tokens obtained via O
 |----------|---------------|-------|
 | `GET /users/{id}` | Any authenticated | User can access own profile |
 | All other `/users` endpoints | `ADMIN` | Full CRUD access |
+| All `/clients` endpoints | `ADMIN` **or** `clients:admin` scope | IoT device client lifecycle — see §8 |
 
 ### API Summary
 
@@ -334,6 +335,14 @@ The deployment uses:
 ## 6. Configure a New OIDC Client
 
 To add a new OIDC client to auth-service:
+
+> **Note — registered clients are JDBC-backed.** Clients are persisted in the
+> `oauth2_registered_client` table (Flyway V5). The `app.oidc.clients` list in
+> `application.yaml` is **bootstrap-only**: `StaticClientSeeder` seeds each
+> entry on first boot and **skips any client that already exists**. After the
+> first boot, editing or removing an existing client in `application.yaml` has
+> no effect — change it via `psql` or, for IoT device clients, the admin API
+> (§8). The steps below apply to the initial bootstrap of a new SSO client.
 
 ### Step 1: Generate Client Secret
 
@@ -429,6 +438,102 @@ No special ServiceAccount is required. The auth-service does not use network pol
 
 ---
 
+## 8. IoT Device Clients (client_credentials)
+
+IoT devices authenticate to Mosquitto with a short-lived JWT obtained from the
+token endpoint using the OAuth2 **`client_credentials`** grant. Each device is
+represented by its own registered client (`client_kind = 'device'`), created
+and revoked through an internal admin API. This API is **admin-only** and not
+part of the public OIDC surface.
+
+### Admin API — Device Client Lifecycle
+
+**Base URL:** `https://auth.furchert.ch/api/v1/clients`
+(cluster-internal: `http://auth-service.apps.svc.cluster.local:8080/api/v1/clients`)
+
+**Authorization:** a JWT with role `ADMIN`, **or** a client token carrying the
+`clients:admin` scope (this is how `device-service` calls it service-to-service).
+
+| Method | Path | Body | Response |
+|--------|------|------|----------|
+| `POST` | `/api/v1/clients` | `{ "clientId": "terra1", "description": "Greenhouse terrarium 1" }` | `201` — created client with one-time secret |
+| `GET` | `/api/v1/clients` | — | `200` — list of device clients (`client_kind='device'` only) |
+| `GET` | `/api/v1/clients/{clientId}` | — | `200` single client, or `404` |
+| `DELETE` | `/api/v1/clients/{clientId}` | — | `204` (idempotent) — see revocation note below |
+
+`clientId` must match `[a-z0-9-]{3,32}` (also the device's MQTT username).
+`description` is optional, max 200 chars.
+
+**Create response** (`201`) — the `clientSecret` is plaintext and returned
+**exactly once**; it is stored only as a bcrypt hash and cannot be retrieved
+again:
+
+```json
+{
+  "clientId": "terra1",
+  "clientSecret": "8f3k...Base64URL...",
+  "scopes": ["mqtt:pub", "mqtt:sub"],
+  "createdAt": "2026-05-16T10:00:00Z"
+}
+```
+
+**List / get response:**
+
+```json
+{
+  "clientId": "terra1",
+  "description": "Greenhouse terrarium 1",
+  "createdAt": "2026-05-16T10:00:00Z",
+  "scopes": ["mqtt:pub", "mqtt:sub"]
+}
+```
+
+**Delete:** removes the client from `oauth2_registered_client` and deletes its
+outstanding `oauth2_authorization` rows, so new token requests fail
+immediately. JWTs already issued to the device remain valid at Mosquitto until
+their `exp` (see revocation note in *Important Notes*).
+
+### Requesting a Device Token
+
+```bash
+curl -u terra1:<clientSecret> \
+  -d 'grant_type=client_credentials' \
+  https://auth.furchert.ch/oauth2/token
+```
+
+Response — a 1-hour access token, **no refresh token** (devices
+re-authenticate on expiry):
+
+```json
+{
+  "access_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "scope": "mqtt:pub mqtt:sub"
+}
+```
+
+### Device Token Claims
+
+`client_credentials` tokens for device clients carry a `device_id` claim (the
+`clientId`) and **no `role` claim**. Mosquitto's JWT plugin uses `device_id`
+as the MQTT username for ACL evaluation, and validates the signature via
+`/oauth2/jwks` like any other token.
+
+```json
+{
+  "sub": "terra1",
+  "aud": "terra1",
+  "scope": "mqtt:pub mqtt:sub",
+  "device_id": "terra1",
+  "iss": "https://auth.furchert.ch",
+  "iat": 1714234567,
+  "exp": 1714238167
+}
+```
+
+---
+
 ## Important Notes
 
 1. **Single-Pod Limitation:** auth-service runs as a single pod (replicas: 1) because Spring Authorization Server stores sessions in memory. Scaling to multiple replicas requires adding Spring Session with Redis/PostgreSQL backend.
@@ -440,3 +545,5 @@ No special ServiceAccount is required. The auth-service does not use network pol
 4. **Key Rotation:** When RSA keys are rotated, all existing tokens become invalid immediately. Downstream services must fetch the new JWKS.
 
 5. **No Rate Limiting:** Currently, there is no rate limiting on any endpoints. Consider adding if exposed to untrusted networks.
+
+6. **Device Token Revocation:** Deleting a device client (or its outstanding authorizations) stops *new* tokens from being issued, but JWTs already held by a device stay valid at Mosquitto until their `exp` (1-hour TTL). Immediate revocation of outstanding device tokens requires signing-key rotation.

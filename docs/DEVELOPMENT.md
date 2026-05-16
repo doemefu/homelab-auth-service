@@ -79,7 +79,8 @@ homelab-auth-service/
 │   │   ├── V1__init.sql
 │   │   ├── V2__timestamps_to_timestamptz_and_fixes.sql
 │   │   ├── V3__oauth2_authorization_schema.sql
-│   │   └── V4__drop_refresh_tokens.sql
+│   │   ├── V4__drop_refresh_tokens.sql
+│   │   └── V5__oauth2_registered_client.sql
 │   │
 │   └── templates/                         # Thymeleaf templates
 │       └── login.html
@@ -97,11 +98,18 @@ homelab-auth-service/
 ├── .github/workflows/                    # GitHub Actions
 │   └── build.yml
 │
-├── docs/                                 # Documentation
-│   ├── OVERVIEW.md
-│   ├── INTERFACES.md
+├── README.md                            # Landing page — doc index, quick start
+├── OVERVIEW.md                          # What the service is, features, API summary
+├── INTERFACES.md                        # How external services/clients integrate
+├── DEPLOYMENT.md                        # K8s deployment, secrets, ingress
+├── CONTRIBUTING.md                      # Local dev setup, testing, PR process
+├── CHANGELOG.md                         # Version history
+│
+├── docs/                                 # Supplementary documentation
+│   ├── INDEX.md                         # Documentation index
 │   ├── DEVELOPMENT.md (this file)
-│   └── DEPLOYMENT.md
+│   ├── PLAN.md
+│   └── SPEC-iot-device-clients.md
 │
 └── pom.xml                               # Maven configuration
 ```

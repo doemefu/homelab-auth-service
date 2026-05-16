@@ -88,4 +88,4 @@ Detailed process rules are in `.claude/rules/` (auto-loaded by Claude Code):
 | `commands.md` | Build, test, cluster access commands |
 | `code-style-conventions.md` | Java/Spring Boot, Lombok, Flyway, secrets |
 | `review-guidelines.md` | Security, diffs, version pinning, tests |
-| `documentation-files.md` | README, OPERATIONS, CONTRIBUTING, DEPLOYMENT, CHANGELOG |
+| `documentation-files.md` | README, OVERVIEW, INTERFACES, DEPLOYMENT, CONTRIBUTING, CHANGELOG |
