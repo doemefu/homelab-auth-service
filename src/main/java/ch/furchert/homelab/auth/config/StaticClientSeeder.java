@@ -11,6 +11,7 @@ import org.springframework.security.oauth2.server.authorization.client.Registere
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.security.oauth2.server.authorization.settings.ClientSettings;
 import org.springframework.security.oauth2.server.authorization.settings.TokenSettings;
+import org.jspecify.annotations.NonNull;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
@@ -23,6 +24,10 @@ import java.util.UUID;
  * each client is skipped if it already exists (by client_id). YAML is therefore
  * a bootstrap source only — post-bootstrap edits must go through psql or the
  * (future) admin API.
+ * <p>
+ * client_kind: seeded rows inherit {@code 'sso'} from the V5 column default —
+ * no explicit write here. Device clients set {@code 'device'} via a side-write
+ * in {@code DeviceClientService}.
  * <p>
  * Secret handling: YAML values are passed through verbatim — they MUST already
  * carry a DelegatingPasswordEncoder prefix ({noop}/{bcrypt}/...) per the
@@ -40,7 +45,7 @@ public class StaticClientSeeder implements ApplicationRunner {
     private final JdbcTemplate jdbcTemplate;
 
     @Override
-    public void run(ApplicationArguments args) {
+    public void run(@NonNull ApplicationArguments args) {
         int seeded = 0;
         for (OidcClientProperties.ClientDefinition def : properties.getClients()) {
             if (registeredClientRepository.findByClientId(def.getClientId()) != null) {

@@ -13,9 +13,9 @@ import org.springframework.security.oauth2.server.authorization.client.Registere
 import java.util.ArrayList;
 import java.util.List;
 
+import org.springframework.boot.ApplicationArguments;
+
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -69,7 +69,7 @@ class StaticClientSeederTest {
         when(repo.findByClientId(any())).thenReturn(null);
         when(jdbcTemplate.queryForObject(any(String.class), eq(Integer.class))).thenReturn(2);
 
-        seeder.run(null);
+        seeder.run(mock(ApplicationArguments.class));
 
         verify(repo, times(2)).save(any());
         // No explicit UPDATE for client_kind — relies on the DEFAULT 'sso' column value.
@@ -82,7 +82,7 @@ class StaticClientSeederTest {
         when(repo.findByClientId("grafana")).thenReturn(stubClient("grafana"));
         when(jdbcTemplate.queryForObject(any(String.class), eq(Integer.class))).thenReturn(1);
 
-        seeder.run(null);
+        seeder.run(mock(ApplicationArguments.class));
 
         verify(repo, never()).save(any());
     }
@@ -97,7 +97,7 @@ class StaticClientSeederTest {
         when(repo.findByClientId("n8n")).thenReturn(null);
         when(jdbcTemplate.queryForObject(any(String.class), eq(Integer.class))).thenReturn(3);
 
-        seeder.run(null);
+        seeder.run(mock(ApplicationArguments.class));
 
         verify(repo, times(2)).save(any());
     }
@@ -109,7 +109,7 @@ class StaticClientSeederTest {
         when(repo.findByClientId(any())).thenReturn(null);
         when(jdbcTemplate.queryForObject(any(String.class), eq(Integer.class))).thenReturn(1);
 
-        seeder.run(null);
+        seeder.run(mock(ApplicationArguments.class));
 
         ArgumentCaptor<RegisteredClient> captor = ArgumentCaptor.forClass(RegisteredClient.class);
         verify(repo).save(captor.capture());
@@ -125,7 +125,7 @@ class StaticClientSeederTest {
         when(repo.findByClientId(any())).thenReturn(null);
         when(jdbcTemplate.queryForObject(any(String.class), eq(Integer.class))).thenReturn(1);
 
-        seeder.run(null);
+        seeder.run(mock(ApplicationArguments.class));
 
         ArgumentCaptor<RegisteredClient> captor = ArgumentCaptor.forClass(RegisteredClient.class);
         verify(repo).save(captor.capture());

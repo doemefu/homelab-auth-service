@@ -97,7 +97,7 @@ public class DeviceClientService {
         clientKindLookup.invalidate(id);
 
         log.info("Created device client '{}'", clientId);
-        return new DeviceClientCreatedResponse(clientId, plaintextSecret, scopes, now);
+        return new DeviceClientCreatedResponse(client.getClientId(), plaintextSecret, scopes, now);
     }
 
     public List<DeviceClientResponse> list() {

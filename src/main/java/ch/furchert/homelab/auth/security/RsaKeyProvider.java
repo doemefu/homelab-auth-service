@@ -2,6 +2,7 @@ package ch.furchert.homelab.auth.security;
 
 import ch.furchert.homelab.auth.config.RsaKeyProperties;
 import jakarta.annotation.PostConstruct;
+import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -21,21 +22,16 @@ public class RsaKeyProvider {
 
     private final RsaKeyProperties rsaKeyProperties;
 
+    @Getter
     private PrivateKey privateKey;
+
+    @Getter
     private PublicKey publicKey;
 
     @PostConstruct
     void init() {
         this.privateKey = loadPrivateKey();
         this.publicKey = loadPublicKey();
-    }
-
-    public PrivateKey getPrivateKey() {
-        return privateKey;
-    }
-
-    public PublicKey getPublicKey() {
-        return publicKey;
     }
 
     private PrivateKey loadPrivateKey() {

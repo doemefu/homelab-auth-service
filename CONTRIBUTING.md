@@ -71,7 +71,7 @@ To exercise the full OIDC login flow locally:
    ./mvnw spring-boot:run
    ```
 
-> The `{noop}` prefix is required: Spring Security's `DelegatingPasswordEncoder` uses it to select the password encoder. Without the prefix, the stored secret is treated as BCrypt and OIDC client authentication at `/oauth2/token` will fail.
+   > The `{noop}` prefix is required: Spring Security's `DelegatingPasswordEncoder` uses it to select the password encoder. Without the prefix, the stored secret is treated as BCrypt and OIDC client authentication at `/oauth2/token` will fail.
 
 3. Open `http://localhost:8080/login` in your browser. You should see the login page.
 
