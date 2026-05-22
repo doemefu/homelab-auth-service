@@ -36,29 +36,29 @@ class OidcClientPropertiesTest {
     @Test
     void loadsClientId() {
         assertThat(props.getClients()).hasSize(1);
-        assertThat(props.getClients().get(0).getClientId()).isEqualTo("grafana");
+        assertThat(props.getClients().getFirst().getClientId()).isEqualTo("grafana");
     }
 
     @Test
     void loadsClientSecret() {
-        assertThat(props.getClients().get(0).getClientSecret()).startsWith("{bcrypt}");
+        assertThat(props.getClients().getFirst().getClientSecret()).startsWith("{bcrypt}");
     }
 
     @Test
     void loadsRedirectUris() {
-        assertThat(props.getClients().get(0).getRedirectUris())
+        assertThat(props.getClients().getFirst().getRedirectUris())
                 .containsExactly("https://grafana.furchert.ch/login/generic_oauth");
     }
 
     @Test
     void loadsPostLogoutRedirectUris() {
-        assertThat(props.getClients().get(0).getPostLogoutRedirectUris())
+        assertThat(props.getClients().getFirst().getPostLogoutRedirectUris())
                 .containsExactly("https://grafana.furchert.ch");
     }
 
     @Test
     void loadsScopes() {
-        assertThat(props.getClients().get(0).getScopes())
+        assertThat(props.getClients().getFirst().getScopes())
                 .containsExactlyInAnyOrder("openid", "profile", "email");
     }
 }

@@ -25,7 +25,8 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, Object>> handleValidation(MethodArgumentNotValidException ex) {
         Map<String, String> fieldErrors = ex.getBindingResult().getFieldErrors().stream()
-                .collect(Collectors.toMap(FieldError::getField, FieldError::getDefaultMessage,
+                .collect(Collectors.toMap(FieldError::getField,
+                        fe -> fe.getDefaultMessage() != null ? fe.getDefaultMessage() : "invalid",
                         (a, b) -> a));
         return ResponseEntity.badRequest().body(errorBody(HttpStatus.BAD_REQUEST, "Validation failed", fieldErrors));
     }
@@ -43,7 +44,7 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * @PreAuthorize failures raise AuthorizationDeniedException; legacy access
+     * {@code @PreAuthorize} failures raise AuthorizationDeniedException; legacy access
      * decisions raise AccessDeniedException. Both must return 403 — otherwise
      * the catch-all generic handler below maps them to 500.
      */

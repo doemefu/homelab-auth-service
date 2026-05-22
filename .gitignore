@@ -75,7 +75,6 @@ Thumbs.db
 
 # Java/Spring specific
 .metadata
-.classpath
 local.properties
 hs_err_pid*
 replay_pid*
@@ -90,3 +89,6 @@ coverage/
 # Test RSA keys are tracked — not real credentials
 !src/test/resources/keys/
 !src/test/resources/keys/*.pem
+/inspections/
+/.claude/memory/
+/.claude/worklogs/

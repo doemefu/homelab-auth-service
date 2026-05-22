@@ -1,529 +1,221 @@
-# DEPLOYMENT.md — homelab-auth-service
+# homelab-auth-service — Deployment & Operations
 
-This file covers auth-service-specific deployment notes. For general cluster deployment patterns (namespaces, Cloudflare Tunnel, Longhorn storage, resource limits), see the [homelab infrastructure docs](https://github.com/doemefu/homelab/tree/main/docs).
-
----
-
-## Automated deployment (Flux CD)
-
-`auth-service` is managed by **Flux CD**. Do not `kubectl apply` the manifests manually — Flux will overwrite any manual change within the next reconciliation interval (≤10 min).
-
-**Deploying a new version:** Push to `main`. CI builds a new image with a `main-YYYYMMDDTHHmmss` tag. Flux detects it within 5 min, commits the updated tag to `k8s/deployment.yaml` in this repo, and the `Kustomization` applies the change to the cluster automatically.
-
-**Checking status:**
-```bash
-flux get kustomizations -n flux-system        # reconciliation state
-flux get image updates -n flux-system         # last automation commit
-kubectl rollout status deployment/auth-service -n apps
-```
-
-**Forcing a reconciliation:**
-```bash
-flux reconcile kustomization auth-service -n flux-system --with-source
-```
-
-**Suspending automation** (e.g. for an emergency image pin):
-```bash
-flux suspend image update auth-service -n flux-system
-# Update image tag manually in k8s/deployment.yaml if needed, then:
-flux resume image update auth-service -n flux-system
-```
+Comprehensive deployment and operational guidance for auth-service.
 
 ---
 
-## Required K8s Secrets
+## Infrastructure requirements
 
-### Database credentials (existing)
-
-```bash
-kubectl create secret generic homelab-db-credentials -n apps \
-  --from-literal=username=<db-user> \
-  --from-literal=password=<db-pass>
-```
-
-### RSA key pair (existing)
-
-```bash
-kubectl create secret generic homelab-auth-rsa-keys -n apps \
-  --from-file=private.pem=<path-to-private.pem> \
-  --from-file=public.pem=<path-to-public.pem>
-```
-
-### OIDC client secrets (new — required for OIDC)
-
-Generate BCrypt hashes for client secrets (used in `application.yaml`):
-
-```bash
-htpasswd -bnBC 12 "" <plaintext-secret> | tr -d ':\n'
-```
-
-The `client-secret` value in `application.yaml` is read directly from the env var by Spring Authorization
-Server and matched using the configured `PasswordEncoder`. The env var must therefore contain the full
-Spring Security encoded form — Spring does **not** hash secrets automatically at runtime.
-
-Simplest approach (homelab): prefix with `{noop}` so the secret is matched as-is:
-```bash
-kubectl create secret generic homelab-auth-secrets -n apps \
-  --from-literal=grafana-client-secret="{noop}<grafana-plaintext-secret>" \
-  --from-literal=ha-client-secret="{noop}<ha-plaintext-secret>" \
-  --from-literal=device-service-client-secret="{noop}<device-service-plaintext-secret>" \
-  --from-literal=n8n-client-secret-authservice="{noop}<n8n-plaintext-secret>" \
-  --from-literal=litellm-client-secret-authservice="{noop}<litellm-plaintext-secret>"
-```
-
-More secure: pre-hash with BCrypt and prefix with `{bcrypt}`:
-```bash
-HASH=$(htpasswd -bnBC 12 "" <plaintext-secret> | tr -d ':\n')
-kubectl create secret generic homelab-auth-secrets -n apps \
-  --from-literal=grafana-client-secret="{bcrypt}${HASH}"
-```
-
-These are referenced in `k8s/deployment.yaml` as:
-
-```yaml
-env:
-  - name: GRAFANA_CLIENT_SECRET
-    valueFrom:
-      secretKeyRef:
-        name: homelab-auth-secrets
-        key: grafana-client-secret
-  - name: HA_CLIENT_SECRET
-    valueFrom:
-      secretKeyRef:
-        name: homelab-auth-secrets
-        key: ha-client-secret
-  - name: DEVICE_SERVICE_CLIENT_SECRET
-    valueFrom:
-      secretKeyRef:
-        name: homelab-auth-secrets
-        key: device-service-client-secret
-  - name: N8N_CLIENT_SECRET
-    valueFrom:
-      secretKeyRef:
-        name: homelab-auth-secrets
-        key: n8n-client-secret-authservice
-  - name: LITELLM_CLIENT_SECRET
-    valueFrom:
-      secretKeyRef:
-        name: homelab-auth-secrets
-        key: litellm-client-secret-authservice
-```
-
-### Sentry DSN (optional)
-
-The `SENTRY_DSN` env var is marked `optional: true` in `k8s/deployment.yaml`. If the Secret does not exist, the pod starts cleanly and Sentry is disabled. To enable Sentry, create:
-
-```bash
-kubectl create secret generic sentry-dsn -n apps \
-  --from-literal=dsn=<your-sentry-dsn>
-```
+- **Kubernetes:** K3s cluster, namespace `apps`
+- **Nodes:** ARM64 (raspi5, raspi4) + future amd64 (mba1, mba2)
+- **Multi-arch:** Docker image supports `linux/arm64` and `linux/amd64`
+- **Ingress:** Cloudflare Tunnel via `platform` namespace
+- **Database:** PostgreSQL `postgresql.apps.svc.cluster.local:5432`, database `homelabdb`
 
 ---
 
-## OIDC-Specific Deployment Notes
+## Dependencies
 
-### Issuer URL must match ingress hostname exactly
+### Kubernetes Secrets (required in `apps` namespace)
 
-`app.oidc.issuer` in `application.yaml` must equal the exact public URL of the service as seen by clients (e.g. `https://auth.furchert.ch`). A mismatch causes `iss` claim validation failures in all downstream OIDC clients.
+| Secret | Keys | Purpose |
+|--------|------|---------|
+| `homelab-db-credentials` | `username`, `password` | Database |
+| `homelab-auth-rsa-keys` | `private.pem`, `public.pem` | JWT signing keys |
+| `homelab-auth-secrets` | Client secrets for Grafana, Home Assistant, device-service, n8n, LiteLLM | OIDC client auth |
+| `sentry-dsn` | `dsn` | Error tracking (optional) |
 
-### Forward-headers strategy
+### Cloudflare Tunnel
 
-The service is deployed behind Cloudflare Tunnel / Traefik. Set in `application.yaml`:
-
-```yaml
-server:
-  forward-headers-strategy: native
-```
-
-Without this, Spring Authorization Server constructs issuer URLs using the internal cluster hostname instead of the public URL, breaking OIDC discovery.
-
-### Single-pod session limitation
-
-Spring Authorization Server stores sessions in memory (no Redis/database-backed session store). The service must run as a **single pod** (replicas: 1). Scaling to multiple replicas will cause login failures because session state is not shared across pods.
-
-If horizontal scaling is required in the future, add Spring Session with Redis/PostgreSQL backend before increasing replicas.
-
----
-
-## Cloudflare Tunnel Ingress
-
-Add auth-service to the cloudflared ingress list in `infra/playbooks/40_platform.yml`:
-
+Add to `infra/playbooks/40_platform.yml`:
 ```yaml
 - hostname: auth.furchert.ch
   service: http://auth-service.apps.svc.cluster.local:8080
 ```
+Apply: `ansible-playbook infra/playbooks/40_platform.yml`
 
-Re-run the platform playbook to apply:
+---
+
+## Deployment methods
+
+### Flux CD (Production - Automated)
+
+1. Push to `main` branch
+2. GitHub Actions builds multi-arch Docker image
+3. Flux CD detects new `main-YYYYMMDDTHHmmss` tag
+4. Flux CD updates `k8s/deployment.yaml` and rolls out automatically
+
+**Manual Flux operations:**
+```bash
+flux get kustomizations -n flux-system
+flux reconcile kustomization auth-service -n flux-system --with-source
+flux suspend image update auth-service -n flux-system  # emergency
+flux resume image update auth-service -n flux-system
+```
+
+### Manual (Development Only)
 
 ```bash
-ansible-playbook infra/playbooks/40_platform.yml
+kubectl apply -k k8s/
+kubectl rollout status deployment/auth-service -n apps
 ```
 
 ---
 
-# APPS.md — App Deployment Guide
+## Step-by-step deployment
+
+### First-time
+
+1. **Create secrets:**
+```bash
+kubectl create secret generic homelab-db-credentials -n apps --from-literal=username=<user> --from-literal=password=<pass>
+openssl genrsa -out private.pem 2048
+openssl rsa -in private.pem -pubout -out public.pem
+kubectl create secret generic homelab-auth-rsa-keys -n apps --from-file=private.pem --from-file=public.pem
+kubectl create secret generic homelab-auth-secrets -n apps \
+  --from-literal=grafana-client-secret="{noop}<secret>" \
+  --from-literal=ha-client-secret="{noop}<secret>" \
+  --from-literal=device-service-client-secret="{noop}<secret>" \
+  --from-literal=n8n-client-secret-authservice="{noop}<secret>" \
+  --from-literal=litellm-client-secret-authservice="{noop}<secret>"
+rm private.pem public.pem
+```
+
+2. **Configure Cloudflare Tunnel** (see above)
+
+3. **Bootstrap first admin:**
+```bash
+HASH=$(htpasswd -bnBC 12 "" yourpassword | tr -d ':\n')
+kubectl exec -n apps deploy/postgresql -- psql -U postgres -d homelabdb \
+  -c "INSERT INTO users (username, email, password_hash, role, status) VALUES ('admin', 'admin@homelab.local', '${HASH}', 'ADMIN', 'ACTIVE');"
+```
+
+4. **Deploy:** Push to `main` or `kubectl apply -k k8s/`
+
+### Upgrade
+
+Push to `main` — Flux CD handles everything automatically.
 
 ---
 
-## Namespace Conventions
-
-| Namespace        | Purpose                                                      | Notes                                      |
-|------------------|--------------------------------------------------------------|--------------------------------------------|
-| `platform`       | Cluster infrastructure (cert-manager, cloudflared, Traefik) | No app workloads                           |
-| `longhorn-system`| Longhorn storage (Helm-Chart-Konvention)                    | No app workloads                           |
-| `monitoring`     | Prometheus, Grafana, Alertmanager                           | No app workloads                           |
-| `apps`           | All application workloads                                   | Resource limits required; no cluster-admin ServiceAccounts |
-
-Do not create namespaces outside this list without explicit discussion (CLAUDE.md non-negotiable).
-
-Create the `apps` namespace once before your first deployment:
+## Post-deployment verification
 
 ```bash
-kubectl create namespace apps
-```
+kubectl get pods -n apps -l app=auth-service
+kubectl rollout status deployment/auth-service -n apps
 
----
+# Verify health
+kubectl port-forward -n apps svc/auth-service 8080:8080
+curl -s http://localhost:8080/actuator/health
 
-## Cloudflare Tunnel Ingress Pattern
-
-Services in `apps` are exposed externally by adding an entry to the cloudflared ingress list in
-`infra/playbooks/40_platform.yml`. No Kubernetes Ingress resource or TLS certificate is required —
-TLS is terminated at the Cloudflare edge.
-
-Cross-namespace access uses the cluster-internal FQDN:
-
-```
-http://<service-name>.<namespace>.svc.cluster.local:<port>
-```
-
-Example (app in `apps` namespace, port 8080):
-
-```yaml
-- hostname: myapp.furchert.ch
-  service: http://myapp.apps.svc.cluster.local:8080
-```
-
-Add this entry to the ingress list in `infra/playbooks/40_platform.yml` (before the `http_status:404` fallback), then re-run the platform playbook — the playbook automatically restarts the cloudflared Pod via a rolling annotation update:
-
-```bash
-ansible-playbook infra/playbooks/40_platform.yml
-```
-
-> **Hinweis:** The cloudflared ingress PUT replaces the full list — always include all existing
-> entries (SSH, Grafana, 404 fallback). The 404 fallback must be last.
-
-For Traefik-based access (requires DNS pointing to the cluster's Traefik LoadBalancer IP and
-a cert-manager certificate), see `examples/simple-deployment.yml`.
-
----
-
-## StorageClass
-
-Longhorn is the default StorageClass (RF=2, replicated across nodes). PVCs that do not specify
-`storageClassName` use Longhorn automatically.
-
-For scratch / non-replicated storage use `local-path` explicitly:
-
-```yaml
-storageClassName: local-path
-```
-
-> Longhorn volumes are accessible from any node and survive node failures. Use Longhorn for
-> databases and stateful workloads. Use `local-path` only for ephemeral or node-local storage.
-
-> **Note on Replication Factor:** With 2 active nodes (raspi5 + raspi4), RF=2 means one replica
-> per node. If raspi4 goes offline, a RF=2 volume degrades to RF=1 until it comes back. This is
-> expected and Longhorn will automatically rebuild when the node rejoins.
-
----
-
-## Resource Limits
-
-Resource limits are required for all workloads in the `apps` namespace (CLAUDE.md non-negotiable).
-
-Baseline template for ARM64 Pi hardware:
-
-```yaml
-resources:
-  requests:
-    cpu: 50m
-    memory: 64Mi
-  limits:
-    cpu: 500m
-    memory: 256Mi
-```
-
-Adjust based on actual workload. Check `kubectl top pods -n apps` after deploy.
-
----
-
-## Multi-Architecture Requirements
-
-The cluster runs ARM64 nodes (raspi5, raspi4) and will include amd64 nodes (mba1, mba2) post-M5.
-**All container images must support both architectures** (`linux/arm64` and `linux/amd64`).
-
-Check whether an image is multi-arch before using it:
-
-```bash
-docker buildx imagetools inspect <image>:<tag> | grep Platform
-```
-
-Expected output should include both:
-```
-Platform: linux/amd64
-Platform: linux/arm64
-```
-
-Official images from Docker Hub (e.g., `postgres`, `nginx`, `redis`) are multi-arch.
-Third-party or self-built images may not be — check before deploying.
-
-If your app image only supports one architecture, add a `nodeSelector` to constrain scheduling:
-
-```yaml
-nodeSelector:
-  kubernetes.io/arch: arm64
+# Verify OIDC
+curl -s https://auth.furchert.ch/.well-known/openid-configuration | jq
+curl -s https://auth.furchert.ch/oauth2/jwks | jq
 ```
 
 ---
 
-## Secrets for Apps
+## Health checks & monitoring
 
-All secrets must be encrypted via SOPS before committing (CLAUDE.md non-negotiable).
-
-### Adding an app secret
-
-1. Open the secrets file for editing:
-   ```bash
-   sops infra/inventory/group_vars/all.sops.yml
-   ```
-2. Add your key:
-   ```yaml
-   myapp_db_password: "your-secret-value"
-   ```
-3. Save and close (SOPS re-encrypts automatically).
-
-### Using the secret in a playbook
-
-Inject via a `kubernetes.core.k8s` task (avoid writing secrets to values files):
-
-```yaml
-- name: myapp Secret anlegen
-  kubernetes.core.k8s:
-    kubeconfig: "{{ kubeconfig }}"
-    definition:
-      apiVersion: v1
-      kind: Secret
-      metadata:
-        name: myapp-secret
-        namespace: apps
-      stringData:
-        db-password: "{{ myapp_db_password }}"
-  delegate_to: localhost
-  no_log: true
-```
-
-Then reference in your Deployment:
-
-```yaml
-env:
-  - name: DB_PASSWORD
-    valueFrom:
-      secretKeyRef:
-        name: myapp-secret
-        key: db-password
-```
-
-> **Never** put secret values directly in `cluster/values/*.yaml` or `examples/` files.
+- **Liveness Probe:** `GET /actuator/health` (30s initial, 10s period, 3 failures)
+- **Readiness Probe:** `GET /actuator/health` (20s initial, 5s period, 3 failures)
+- **Endpoints:** `/actuator/health`, `/actuator/info` (unauthenticated)
 
 ---
 
-## Reference Manifests
+## Runbooks
 
-Working examples are in `examples/`. Copy and adapt for your app.
+### Restart service
+```bash
+kubectl rollout restart deployment/auth-service -n apps
+kubectl rollout status deployment/auth-service -n apps
+```
 
-| File | What it shows |
-|------|---------------|
-| [`examples/simple-deployment.yml`](examples/simple-deployment.yml) | Deployment + Service + Traefik IngressRoute with cert-manager TLS (letsencrypt-prod; requires DNS to Traefik IP) |
-| [`examples/with-postgres.yml`](examples/with-postgres.yml) | App + Postgres + Longhorn PVC + Secret |
-| [`examples/with-ingress-public.yml`](examples/with-ingress-public.yml) | Public exposure via Cloudflare Tunnel (no IngressRoute) |
-| [`examples/helm-values-template.yml`](examples/helm-values-template.yml) | Starting point for custom Helm chart values |
+### RSA key rotation
+```bash
+openssl genrsa -out private.pem 2048
+openssl rsa -in private.pem -pubout -out public.pem
+kubectl delete secret homelab-auth-rsa-keys -n apps
+kubectl create secret generic homelab-auth-rsa-keys -n apps --from-file=private.pem --from-file=public.pem
+kubectl rollout restart deployment/auth-service -n apps
+rm private.pem public.pem
+```
+**Note:** All existing tokens become invalid immediately.
 
-All examples use:
-- Namespace `apps`
-- Multi-arch images
-- Resource limits per the baseline above
-- No hardcoded secrets (comments show where SOPS-backed values belong)
+### Add new OIDC client
+1. Generate encoded secret: `{noop}<plaintext>` or `{bcrypt}$2a$...`
+2. Update secret: `kubectl patch secret homelab-auth-secrets -n apps --type merge -p '{"stringData":{"new-client-secret":"{noop}<secret>"}}'`
+3. Add client config to `application.yaml`
+4. Add env var reference to `k8s/deployment.yaml`
+5. Restart service
 
 ---
 
-## Deploying Your App
+## Troubleshooting
 
-### Prerequisites
+### Service fails to start - Flyway
+| Error | Solution |
+|-------|----------|
+| Database unreachable | Check `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` |
+| Checksum mismatch | Restore original migration file |
+| Non-empty schema, no history | Use `FLYWAY_BASELINE_ON_MIGRATE=true`, `FLYWAY_BASELINE_VERSION=4` for first deploy |
 
-Ensure `kubectl` is configured to talk to the homelab cluster:
+### Service fails to start - RSA keys
+| Error | Solution |
+|-------|----------|
+| No such file/directory | Check volume mount `/etc/secrets` |
+| Invalid PEM format | Regenerate keys and recreate secret |
 
+### JWT validation failures
+- Keys rotated? Restart downstream services
+- Issuer mismatch? Ensure `app.oidc.issuer=https://auth.furchert.ch`
+- Token expired? Client must refresh
+
+### OIDC login issues
+- Issuer mismatch? Set `app.oidc.issuer=https://auth.furchert.ch`
+- Forward headers? Set `server.forward-headers-strategy=native`
+- Multiple pods? Scale to 1 or add session backend
+
+### Pod/Image issues
 ```bash
-export KUBECONFIG=~/.kube/homelab.yaml
-kubectl get nodes  # should show raspi5 + raspi4 as Ready
-```
-
-> Add `export KUBECONFIG=~/.kube/homelab.yaml` to your `~/.zshrc` to make it permanent.
-
-### Create the namespace (once)
-
-```bash
-kubectl create namespace apps
-```
-
-### kubectl apply workflow
-
-1. **Apply your manifest:**
-   ```bash
-   kubectl apply -f your-app.yml
-   ```
-
-2. **Wait for rollout:**
-   ```bash
-   kubectl rollout status deployment/<your-app> -n apps
-   ```
-
-3. **Verify pods are Running:**
-   ```bash
-   kubectl get pods -n apps
-   ```
-
-See `examples/simple-deployment.yml` for a complete manifest to start from.
-
-### Helm workflow
-
-If your app uses a Helm chart, store your values in `cluster/values/<your-app>.yaml` and always pin the chart version.
-
-1. **Add the chart repo (once):**
-   ```bash
-   helm repo add <repo-name> <repo-url>
-   helm repo update
-   ```
-
-2. **Install or upgrade (same command for both):**
-   ```bash
-   helm upgrade --install <release-name> <repo>/<chart> \
-     --namespace apps --create-namespace \
-     -f cluster/values/<your-app>.yaml \
-     --version <pinned-version>
-   ```
-
-3. **Verify:**
-   ```bash
-   helm list -n apps
-   kubectl get pods -n apps
-   ```
-
-See `examples/helm-values-template.yml` as a starting point for your values file.
-
-### Updating a running app
-
-**Manifest-based** — edit your manifest, then re-apply:
-```bash
-kubectl apply -f your-app.yml
-kubectl rollout status deployment/<your-app> -n apps
-```
-
-**Helm-based** — bump the version in your values file, then upgrade:
-```bash
-helm upgrade <release-name> <repo>/<chart> \
-  --namespace apps \
-  -f cluster/values/<your-app>.yaml \
-  --version <new-version>
-```
-
-### Rollback
-
-**Manifest-based:**
-```bash
-kubectl rollout undo deployment/<your-app> -n apps
-```
-
-**Helm-based:**
-```bash
-helm history <release-name> -n apps        # list revisions
-helm rollback <release-name> <revision> -n apps
-```
-
----
-
-## Post-Deploy Verification
-
-After deploying, verify:
-
-```bash
-# Pods are Running, not CrashLoopBackOff or Pending
-kubectl get pods -n apps
-
-# PVCs are Bound (if using Longhorn storage)
-kubectl get pvc -n apps
-
-# Resource usage is within limits
-kubectl top pods -n apps
-
-# Endpoint responds (for cluster-internal IngressRoute)
-kubectl port-forward -n apps svc/<service-name> 8080:80
-curl -s http://localhost:8080  # or the expected health path
-```
-
-For publicly exposed apps (Cloudflare Tunnel), verify the DNS entry is set and the tunnel shows the hostname as healthy:
-
-```bash
-# Check cloudflared pod is running with the updated ingress
-kubectl logs -n platform deployment/cloudflared-cloudflare-tunnel-remote | tail -20
-```
-
----
-
-## App Troubleshooting
-
-### CrashLoopBackOff
-```bash
-kubectl logs -n apps <pod-name> --previous
 kubectl describe pod -n apps <pod-name>
 ```
-Common causes: missing environment variables, wrong image, insufficient memory (OOMKilled).
+Common: Insufficient CPU/memory, nodeSelector mismatch, image not available for architecture.
 
-### Pod stuck in Pending
+---
+
+## Configuration reference
+
+### Environment variables
+
+| Variable | Source | Required | Description |
+|----------|--------|----------|-------------|
+| `DB_USERNAME` | `homelab-db-credentials` | Yes | PostgreSQL username |
+| `DB_PASSWORD` | `homelab-db-credentials` | Yes | PostgreSQL password |
+| `DB_URL` | Config | No | JDBC URL (default: `jdbc:postgresql://postgresql.apps.svc.cluster.local:5432/homelabdb`) |
+| `GRAFANA_CLIENT_SECRET` | `homelab-auth-secrets` | Yes | Grafana OIDC client secret |
+| `HA_CLIENT_SECRET` | `homelab-auth-secrets` | Yes | Home Assistant OIDC client secret |
+| `DEVICE_SERVICE_CLIENT_SECRET` | `homelab-auth-secrets` | Yes | device-service OIDC client secret |
+| `N8N_CLIENT_SECRET` | `homelab-auth-secrets` | Yes | n8n OIDC client secret |
+| `LITELLM_CLIENT_SECRET` | `homelab-auth-secrets` | Yes | LiteLLM OIDC client secret |
+| `SENTRY_DSN` | `sentry-dsn` | No | Sentry error tracking |
+
+---
+
+## Quick commands
+
 ```bash
-kubectl describe pod -n apps <pod-name>
-# Look for: Insufficient cpu/memory, No nodes matched NodeSelector
-```
-Common causes: resource requests exceed available capacity, or node affinity mismatch.
+# Status
+kubectl get pods -n apps -l app=auth-service
+kubectl rollout status deployment/auth-service -n apps
 
-Check node capacity:
-```bash
-kubectl describe node raspi5 | grep -A 5 "Allocatable:"
-kubectl describe node raspi4 | grep -A 5 "Allocatable:"
-```
+# Logs
+kubectl logs -n apps deployment/auth-service --tail=100 -f
 
-### PVC stuck in Pending
-```bash
-kubectl describe pvc -n apps <pvc-name>
-```
-Common causes: Longhorn not healthy, wrong storageClass name.
+# Restart
+kubectl rollout restart deployment/auth-service -n apps
 
-Check Longhorn status:
-```bash
-kubectl get pods -n longhorn-system
-# Access Longhorn UI:
-kubectl port-forward -n longhorn-system svc/longhorn-frontend 8080:80
-# Open: http://localhost:8080
+# Flux
+flux get kustomizations -n flux-system
+flux reconcile kustomization auth-service -n flux-system --with-source
 ```
-
-### ImagePullBackOff
-```bash
-kubectl describe pod -n apps <pod-name> | grep -A 5 "Events:"
-```
-Common causes: image name typo, private registry without imagePullSecret, image not available for arm64.
-
-### Service not reachable via Cloudflare Tunnel
-1. Verify the hostname entry is in the ingress list in `40_platform.yml`
-2. Re-run: `ansible-playbook infra/playbooks/40_platform.yml`
-3. Check cloudflared pod restarted and shows the hostname in logs
-4. Verify DNS CNAME: `<hostname> → <tunnel-id>.cfargotunnel.com` (Proxy: enabled) in Cloudflare Dashboard

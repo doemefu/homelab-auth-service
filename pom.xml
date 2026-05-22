@@ -12,9 +12,27 @@
 	<artifactId>auth-service</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
 	<name>homelab-auth-service</name>
-	<description>JWT authentication service for the doemefu homelab IoT ecosystem</description>
+	<description>OIDC/OAuth2 authorization server and JWT authentication service for the doemefu homelab IoT ecosystem</description>
+	<url>https://github.com/doemefu/homelab-auth-service</url>
+
+	<developers>
+		<developer>
+			<id>doemefu</id>
+			<name>Dominic Furchert</name>
+			<url>https://github.com/doemefu</url>
+		</developer>
+	</developers>
+
+	<scm>
+		<url>https://github.com/doemefu/homelab-auth-service</url>
+		<connection>scm:git:https://github.com/doemefu/homelab-auth-service.git</connection>
+		<developerConnection>scm:git:ssh://git@github.com/doemefu/homelab-auth-service.git</developerConnection>
+	</scm>
 	<properties>
 		<java.version>25</java.version>
+		<!-- Override only the managed Tomcat version on the Spring Boot 4.0.6 BOM to pick up
+		     the latest 11.0.x patch (Apache Tomcat security fixes), staying on the stable train. -->
+		<tomcat.version>11.0.22</tomcat.version>
 	</properties>
 
 	<dependencyManagement>

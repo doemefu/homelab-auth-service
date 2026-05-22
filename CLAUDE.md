@@ -35,10 +35,10 @@ This is 1 of 3 microservices. The other two (device-service, data-service) valid
 | Component | Version |
 |-----------|---------|
 | Java | 25 |
-| Spring Boot | 4.0.5 |
+| Spring Boot | 4.0.6 |
 | jjwt | 0.12.6 |
-| springdoc-openapi | 2.7.0 |
-| Testcontainers BOM | 2.0.4 (managed by Spring Boot 4.0.5) |
+| springdoc-openapi | 3.0.3 |
+| Testcontainers BOM | 2.0.5 (project-managed via dependencyManagement import) |
 
 ## Spring Boot 4.0 Notes
 
@@ -88,4 +88,4 @@ Detailed process rules are in `.claude/rules/` (auto-loaded by Claude Code):
 | `commands.md` | Build, test, cluster access commands |
 | `code-style-conventions.md` | Java/Spring Boot, Lombok, Flyway, secrets |
 | `review-guidelines.md` | Security, diffs, version pinning, tests |
-| `documentation-files.md` | README, OPERATIONS, CONTRIBUTING, DEPLOYMENT, CHANGELOG |
+| `documentation-files.md` | README, OVERVIEW, INTERFACES, DEPLOYMENT, CONTRIBUTING, CHANGELOG |
