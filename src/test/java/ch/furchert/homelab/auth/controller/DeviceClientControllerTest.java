@@ -21,8 +21,6 @@ import tools.jackson.databind.ObjectMapper;
 import java.time.Instant;
 import java.util.List;
 
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -134,6 +132,36 @@ class DeviceClientControllerTest {
                         .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].clientId").value("terra1"));
+    }
+
+    @Test
+    void list_asPlainUser_returns403() throws Exception {
+        mockMvc.perform(get("/api/v1/clients")
+                        .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_USER"))))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(deviceClientService);
+    }
+
+    @Test
+    void get_asAdmin_returns200() throws Exception {
+        when(deviceClientService.get("terra1")).thenReturn(
+                new DeviceClientResponse("terra1", "Greenhouse 1", Instant.now(),
+                        List.of("mqtt:pub", "mqtt:sub")));
+
+        mockMvc.perform(get("/api/v1/clients/terra1")
+                        .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.clientId").value("terra1"));
+    }
+
+    @Test
+    void get_asPlainUser_returns403() throws Exception {
+        mockMvc.perform(get("/api/v1/clients/terra1")
+                        .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_USER"))))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(deviceClientService);
     }
 
     @Test

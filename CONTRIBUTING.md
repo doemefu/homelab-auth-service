@@ -160,6 +160,36 @@ curl -s http://localhost:8080/oauth2/jwks | jq
 
 ---
 
+## Test with OIDC Flow
+
+To exercise the full OIDC login flow locally:
+
+1. Port-forward PostgreSQL from the cluster (see step 2 in Local Development Setup).
+
+2. Set env vars and start the service:
+   ```bash
+   export DB_USERNAME=homelab
+   export DB_PASSWORD=homelab
+   export GRAFANA_CLIENT_SECRET="{noop}local-dev-secret"
+   export HA_CLIENT_SECRET="{noop}local-dev-secret"
+   ./mvnw spring-boot:run
+   ```
+
+   > The `{noop}` prefix is required: Spring Security's `DelegatingPasswordEncoder` uses it to select the password encoder. Without the prefix, the stored secret is treated as BCrypt and OIDC client authentication at `/oauth2/token` will fail.
+
+3. Open `http://localhost:8080/login` in your browser. You should see the login page.
+
+4. Log in with a user that exists in the cluster database. On success, Spring Authorization Server issues an authorization code and redirects to the configured redirect URI.
+
+5. To test the discovery document:
+   ```bash
+   curl -s http://localhost:8080/.well-known/openid-configuration | python3 -m json.tool
+   ```
+
+6. To test the JWKS endpoint:
+   ```bash
+   curl -s http://localhost:8080/oauth2/jwks | python3 -m json.tool
+   ```
 ## Spring Boot 4.0 / Spring Security 7 Notes
 
 1. **Jackson 3:** Use `tools.jackson` group ID
