@@ -90,3 +90,5 @@ coverage/
 !src/test/resources/keys/
 !src/test/resources/keys/*.pem
 /inspections/
+/.claude/memory/
+/.claude/worklogs/
