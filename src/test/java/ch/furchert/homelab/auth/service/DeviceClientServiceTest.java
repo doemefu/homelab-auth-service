@@ -8,11 +8,13 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.ArgumentMatchers;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
@@ -152,10 +154,9 @@ class DeviceClientServiceTest {
     }
 
     @Test
-    @SuppressWarnings("unchecked")
     void get_unknownClient_throws404() {
         when(jdbcTemplate.queryForObject(any(String.class),
-                any(org.springframework.jdbc.core.RowMapper.class),
+                ArgumentMatchers.<RowMapper<?>>any(),
                 eq("device"), eq("ghost")))
                 .thenThrow(new EmptyResultDataAccessException(1));
 
