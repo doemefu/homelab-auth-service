@@ -11,6 +11,14 @@
 - [OIDC client secret prefix](feedback_oidc_secret_prefix.md) — DelegatingPasswordEncoder requires {noop}/{bcrypt} prefix; missing prefix = BCrypt mismatch = silent auth failure
 - [Jackson 3 imports](feedback_jackson3_imports.md) — Project uses tools.jackson (Jackson 3), not com.fasterxml.jackson (Jackson 2)
 
+## 2026-05-22 — Revert DeviceClientServiceTest matcher change
+
+**Decision:** Reverted `DeviceClientServiceTest#get_unknownClient_throws404` to keep `@SuppressWarnings("unchecked")` and raw `RowMapper.class` matcher at user request due local test failures after typed-matcher refactor.
+**Worklog:** _none_
+**Status:** done — pending commit by user
+**Open:**
+- User can rerun test suite on their environment to confirm stability
+
 ## 2026-05-13 — IoT Device OAuth2 Clients shipped (JDBC repo + admin API)
 
 **Decision:** Implemented `docs/SPEC-iot-device-clients.md`. Switched Spring AS `RegisteredClientRepository` from in-memory to JDBC via Flyway V5 (`oauth2_registered_client` + `client_kind` extension column). Added `StaticClientSeeder` (idempotent YAML→DB bootstrap), `/api/v1/clients` admin CRUD (gated by `hasRole('ADMIN') or hasAuthority('SCOPE_clients:admin')`), `device_id` JWT claim for `client_credentials` tokens with `client_kind='device'`, `ClientKindLookup` per-JVM cache. `device-service` client is now multi-grant (auth_code + refresh_token + client_credentials) with `clients:admin` scope. `@EnableMethodSecurity` enabled.

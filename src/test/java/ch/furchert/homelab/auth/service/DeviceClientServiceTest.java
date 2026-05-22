@@ -152,9 +152,10 @@ class DeviceClientServiceTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
     void get_unknownClient_throws404() {
         when(jdbcTemplate.queryForObject(any(String.class),
-                any(),
+                any(org.springframework.jdbc.core.RowMapper.class),
                 eq("device"), eq("ghost")))
                 .thenThrow(new EmptyResultDataAccessException(1));
 
