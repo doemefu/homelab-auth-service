@@ -145,7 +145,7 @@ openssl genrsa -out src/test/resources/keys/private.pem 2048
 openssl rsa -in src/test/resources/keys/private.pem -pubout -out src/test/resources/keys/public.pem
 ```
 
-**IMPORTANT:** Never commit these files. Both `src/main/resources/keys/` and `src/test/resources/keys/` are in `.gitignore`. For cluster deployment, keys are injected via the `homelab-auth-rsa-keys` K8s Secret.
+**IMPORTANT:** Do not commit local development keys from `src/main/resources/keys/`; that directory is gitignored. Test key files under `src/test/resources/keys/*.pem` are tracked as test fixtures, so only regenerate or replace them when intentionally updating test resources. For cluster deployment, keys are injected via the `homelab-auth-rsa-keys` K8s Secret.
 
 ### 3. Port-Forward PostgreSQL
 
