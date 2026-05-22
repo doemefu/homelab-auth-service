@@ -107,7 +107,7 @@ openssl genrsa -out src/test/resources/keys/private.pem 2048
 openssl rsa -in src/test/resources/keys/private.pem -pubout -out src/test/resources/keys/public.pem
 ```
 
-**IMPORTANT:** Never commit these files. Both key directories are in `.gitignore`.
+**IMPORTANT:** Do not commit runtime keys from `src/main/resources/keys/`; that directory is ignored by `.gitignore`. Test RSA keys under `src/test/resources/keys/*.pem` are tracked for tests, so only change them intentionally if the test fixtures need to be updated.
 
 ### 3. Port-Forward PostgreSQL
 
