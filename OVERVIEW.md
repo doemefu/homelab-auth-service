@@ -122,13 +122,13 @@ client lifecycle. See [INTERFACES.md §8](./INTERFACES.md) for full details.
 | Component | Version/Technology |
 |-----------|-------------------|
 | **Runtime** | Java 25 (Temurin) |
-| **Framework** | Spring Boot 4.0.5 |
+| **Framework** | Spring Boot 4.0.6 |
 | **Security** | Spring Security 7, Spring Authorization Server |
 | **OIDC** | OpenID Connect 1.0 |
 | **JWT** | RSA-2048 signed tokens |
 | **Database** | PostgreSQL (Flyway migrations) |
 | **ORM** | Spring Data JPA (Hibernate) |
-| **API Docs** | SpringDoc OpenAPI 3.0.2 |
+| **API Docs** | SpringDoc OpenAPI 3.0.3 |
 | **Templating** | Thymeleaf (login page) |
 | **Error Tracking** | Sentry (optional) |
 | **Container** | Multi-arch Docker (linux/amd64 + linux/arm64) |

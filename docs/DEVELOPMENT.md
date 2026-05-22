@@ -293,8 +293,9 @@ curl -s http://localhost:8080/oauth2/jwks | jq
 | V2 | Widens `password_hash` to VARCHAR(255), resizes `refresh_tokens.token` to VARCHAR(64) for SHA-256 hashes, converts all timestamps to TIMESTAMPTZ |
 | V3 | Creates `oauth2_authorization` and `oauth2_authorization_consent` tables for Spring Authorization Server token storage |
 | V4 | Drops legacy `refresh_tokens` table |
+| V5 | Creates `oauth2_registered_client` table + `client_kind` column/index for Spring Authorization Server |
 
-**Next migration:** Use `V5__description.sql` for new changes.
+**Next migration:** Use `V6__description.sql` for new changes.
 
 ### Entity Conventions
 
@@ -439,7 +440,7 @@ kubectl get deployment -n apps auth-service
 kubectl rollout status deployment/auth-service -n apps
 
 # Restart deployment
-git rollout restart deployment/auth-service -n apps
+kubectl rollout restart deployment/auth-service -n apps
 ```
 
 ### Testing OIDC Flow Locally

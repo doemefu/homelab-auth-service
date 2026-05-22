@@ -75,7 +75,7 @@ homelab-auth-service/
 │
 ├── src/main/resources/
 │   ├── application.yaml
-│   ├── db/migration/       # Flyway migrations V1-V4
+│   ├── db/migration/       # Flyway migrations V1-V5
 │   └── templates/         # Thymeleaf templates
 │
 ├── src/test/              # Tests (unit, controller, integration)

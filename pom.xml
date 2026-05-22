@@ -30,6 +30,9 @@
 	</scm>
 	<properties>
 		<java.version>25</java.version>
+		<!-- Override only the managed Tomcat version on the Spring Boot 4.0.6 BOM to pick up
+		     the latest 11.0.x patch (Apache Tomcat security fixes), staying on the stable train. -->
+		<tomcat.version>11.0.22</tomcat.version>
 	</properties>
 
 	<dependencyManagement>
@@ -72,7 +75,6 @@
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-webmvc</artifactId>
-			<version>4.1.0-RC1</version>
 		</dependency>
 
 		<dependency>
