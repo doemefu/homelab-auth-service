@@ -80,6 +80,15 @@ app:
         post-logout-redirect-uris:
           - https://ai.furchert.ch
         scopes: [ openid, profile, email ]
+      - client-id: furchert-ch
+        client-secret: "${FURCHERT_CH_CLIENT_SECRET}"
+        redirect-uris:
+          - https://furchert.ch/api/auth/callback/furchert-ch
+          - http://localhost:3000/api/auth/callback/furchert-ch
+        post-logout-redirect-uris:
+          - https://furchert.ch
+          - http://localhost:3000
+        scopes: [ openid, profile, email ]
 
 management:
   endpoints:
