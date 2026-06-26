@@ -18,7 +18,7 @@ spec:
       containers:
         - name: auth-service
           # Image tag is managed by Flux CD image automation.
-          image: ghcr.io/doemefu/homelab-auth-service:main-20260626T093622 # {"$imagepolicy": "flux-system:auth-service"}
+          image: ghcr.io/doemefu/homelab-auth-service:main-20260626T100140 # {"$imagepolicy": "flux-system:auth-service"}
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
@@ -80,7 +80,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: homelab-auth-secrets
-                  key: furchert-ch-client-secret   # value = {noop}<plaintext> via SOPS
+                  key: furchert-ch-client-secret # value = {noop}<plaintext> via SOPS
           volumeMounts:
             - name: rsa-keys
               mountPath: /etc/secrets
