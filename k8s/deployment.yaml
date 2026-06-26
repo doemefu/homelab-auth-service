@@ -74,7 +74,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: sentry-dsn
-                key: dsn
+                  key: dsn
                   optional: true
             - name: FURCHERT_CH_CLIENT_SECRET
               valueFrom:
