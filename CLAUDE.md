@@ -16,7 +16,7 @@ JWT authentication service for the doemefu homelab IoT ecosystem. Issues access/
 
 This is 1 of 3 microservices. The other two (device-service, data-service) validate JWTs by fetching the RSA public key from this service's `/auth/jwks` endpoint. This service is fully self-contained — no runtime calls to other services.
 
-**Full architecture spec:** `../../docs/052-architecture-target.md`
+**Full architecture spec:** `../docs/052-architecture-target.md`
 **Implementation plan:** `PLAN.md`
 
 ## Non-Negotiables
