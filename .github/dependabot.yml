@@ -4,6 +4,8 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
+    assignees:
+      - "doemefu"
     open-pull-requests-limit: 5
     groups:
       spring-stack:
