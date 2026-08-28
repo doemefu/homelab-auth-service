@@ -50,6 +50,8 @@
 ### Fixed
 
 - k8s: raise CPU limit to 1 CPU and startupProbe budget to 300 s — pods scheduled on the 4-core node exceeded the 150 s startup budget under the 500m quota and crash-looped (#74).
+- Error responses no longer collapse to an empty 403: `/error` and ERROR dispatches are permitted on the catch-all security chain (CSRF-exempt), so Spring Boot renders proper error bodies again — browsers had been downloading the empty responses (#77).
+- OIDC RP-initiated logout with an unresolvable `id_token_hint` (purged authorization, `sid` mismatch) now ends the IdP session and redirects to `/login?logout` instead of failing with `invalid_token` (#77).
 
 ---
 

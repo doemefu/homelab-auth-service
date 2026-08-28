@@ -8,7 +8,10 @@ import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.proc.SecurityContext;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -19,7 +22,11 @@ import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.OAuth2AuthorizationServerConfiguration;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
+import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
+import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationService;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService;
@@ -30,7 +37,9 @@ import org.springframework.security.oauth2.server.authorization.settings.Authori
 import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext;
 import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenCustomizer;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.AuthenticationFailureHandler;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
+import org.springframework.security.web.authentication.logout.SecurityContextLogoutHandler;
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
 
 import java.security.interfaces.RSAPrivateKey;
@@ -39,6 +48,7 @@ import java.security.interfaces.RSAPublicKey;
 @Configuration
 @EnableConfigurationProperties(OidcClientProperties.class)
 @RequiredArgsConstructor
+@Slf4j
 public class AuthorizationServerConfig {
 
     private static final String RSA_KEY_ID = "auth-service-v1";
@@ -62,7 +72,7 @@ public class AuthorizationServerConfig {
                         .oidc(oidc -> oidc
                                 .userInfoEndpoint(userInfo -> userInfo.userInfoMapper(userInfoMapper))
                                 .providerConfigurationEndpoint(Customizer.withDefaults())
-                                .logoutEndpoint(Customizer.withDefaults())
+                                .logoutEndpoint(logout -> logout.errorResponseHandler(oidcLogoutErrorResponseHandler()))
                         )
                 )
                 .authorizeHttpRequests(auth -> auth.anyRequest().authenticated())
@@ -77,6 +87,34 @@ public class AuthorizationServerConfig {
                 );
 
         return http.build();
+    }
+
+    /**
+     * RP-initiated logout ({@code /connect/logout}) requires an {@code id_token_hint}
+     * that resolves to a stored {@code oauth2_authorization} row. That lookup fails
+     * once the authorization has been purged by {@link ch.furchert.homelab.auth.service.TokenCleanupScheduler}
+     * (roughly the refresh-token TTL — 7 days — after login) or when the ID token was
+     * issued to a different browser session ({@code sid} mismatch). Spring Authorization
+     * Server's default handler turns that into a bare {@code 400 invalid_token} error
+     * page and leaves the IdP's own session alive. Instead, end the local session and
+     * send the user back to the login page.
+     * <p>
+     * The redirect target is fixed to {@code /login?logout} rather than the client's
+     * requested {@code post_logout_redirect_uri}: that URI can only be validated against
+     * the registered client once the {@code id_token_hint} has resolved, so honoring it
+     * here would be an open redirect.
+     */
+    private AuthenticationFailureHandler oidcLogoutErrorResponseHandler() {
+        return (HttpServletRequest request, HttpServletResponse response, AuthenticationException exception) -> {
+            if (exception instanceof OAuth2AuthenticationException oauth2Exception) {
+                OAuth2Error error = oauth2Exception.getError();
+                log.warn("OIDC logout rejected: {} ({}) — performing local logout",
+                        error.getErrorCode(), error.getDescription());
+            }
+            new SecurityContextLogoutHandler().logout(request, response,
+                    SecurityContextHolder.getContext().getAuthentication());
+            response.sendRedirect("/login?logout");
+        };
     }
 
     @Bean

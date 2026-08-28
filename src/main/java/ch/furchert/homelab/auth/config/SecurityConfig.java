@@ -1,5 +1,6 @@
 package ch.furchert.homelab.auth.config;
 
+import jakarta.servlet.DispatcherType;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
@@ -17,7 +18,6 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -57,7 +57,13 @@ public class SecurityConfig {
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter()))
                 )
                 .exceptionHandling(ex -> ex
-                        .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED))
+                        // HttpStatusEntryPoint calls response.setStatus(), not sendError() — it
+                        // never marks the response as "in error", so Boot's /error rendering
+                        // (and our catch-all fix above) never triggers and the body stays empty
+                        // (#77). Call sendError() directly for the same fixed 401, routed through
+                        // the same /error rendering as every other endpoint.
+                        .authenticationEntryPoint((request, response, authException) ->
+                                response.sendError(HttpStatus.UNAUTHORIZED.value(), HttpStatus.UNAUTHORIZED.getReasonPhrase()))
                 )
                 .csrf(csrf -> csrf.ignoringRequestMatchers(request -> true));
 
@@ -91,11 +97,28 @@ public class SecurityConfig {
     /**
      * Chain 999: catch-all — deny everything not matched by an earlier chain.
      * This covers paths like /swagger-ui.html, /api-docs, and static assets.
+     * <p>
+     * Boot renders every {@code sendError()} (4xx/5xx from any chain, including
+     * this one) by forwarding the request to {@code /error} as an ERROR dispatch.
+     * Security's filter chain runs for ERROR dispatches too (default
+     * {@code spring.security.filter.dispatcher-types}), so without the
+     * exemptions below that forward was itself denied by this catch-all,
+     * collapsing every error response into an empty 403 (#77).
      */
     @Bean
     @Order(999)
     public SecurityFilterChain catchAllSecurityFilterChain(HttpSecurity http) {
-        http.authorizeHttpRequests(auth -> auth.anyRequest().denyAll());
+        http
+                .authorizeHttpRequests(auth -> auth
+                        .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
+                        .requestMatchers("/error").permitAll()
+                        .anyRequest().denyAll())
+                // The ERROR-dispatch forward to /error keeps the original HTTP method
+                // (e.g. a CSRF-rejected POST /login). This chain has CSRF enabled by
+                // default and is re-entered for the forward, so without this exemption
+                // CsrfFilter rejects again and the response collapses back to the
+                // empty-body 403 that made browsers download error responses (#77).
+                .csrf(csrf -> csrf.ignoringRequestMatchers("/error"));
         return http.build();
     }
 

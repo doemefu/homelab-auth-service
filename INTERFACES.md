@@ -89,6 +89,24 @@ The `role` claim contains the user's role (`USER` or `ADMIN`).
 
 Note: The `role` claim in UserInfo is **not** prefixed with `ROLE_`.
 
+### RP-Initiated Logout
+
+```
+GET /connect/logout?id_token_hint=<id_token>&post_logout_redirect_uri=<registered URI>
+```
+
+- `id_token_hint` is **required** and must resolve to a stored authorization:
+  - Authorizations are purged by `TokenCleanupScheduler` roughly 7 days after login (the
+    refresh-token TTL).
+  - An ID token issued in a different IdP browser session (`sid` mismatch) is rejected.
+- On success: the IdP session is ended and the browser is redirected to the registered
+  `post_logout_redirect_uri`.
+- On any error: the IdP still ends its local session and redirects to `/login?logout` —
+  never to the requested URI, since it cannot be validated against the registered client
+  without a resolvable `id_token_hint`.
+- RPs whose own session outlives ~7 days (e.g. furchert-ch's 30-day sliding Auth.js
+  session) should expect the `/login?logout` landing in that case, not an error page.
+
 ---
 
 ## 2. Client-Specific Integration Guides
@@ -548,3 +566,5 @@ as the MQTT username for ACL evaluation, and validates the signature via
 5. **No Rate Limiting:** Currently, there is no rate limiting on any endpoints. Consider adding if exposed to untrusted networks.
 
 6. **Device Token Revocation:** Deleting a device client (or its outstanding authorizations) stops *new* tokens from being issued, but JWTs already held by a device stay valid at Mosquitto until their `exp` (1-hour TTL). Immediate revocation of outstanding device tokens requires signing-key rotation.
+
+7. **RP-Initiated Logout Failure Mode:** An unresolvable `id_token_hint` (purged authorization, `sid` mismatch) never returns an error page — the IdP ends its local session and redirects to `/login?logout` instead.
