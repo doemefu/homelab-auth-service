@@ -327,8 +327,9 @@ Both endpoints are **unauthenticated** and accessible without tokens.
 ### Kubernetes Probes
 
 The deployment uses:
-- **Liveness Probe:** `GET /actuator/health` (30s initial delay, 10s period, 3 failures)
-- **Readiness Probe:** `GET /actuator/health` (20s initial delay, 5s period, 3 failures)
+- **Startup Probe:** `GET /actuator/health` (5s period, 60 failures — 300s budget)
+- **Liveness Probe:** `GET /actuator/health` (10s period, 3 failures)
+- **Readiness Probe:** `GET /actuator/health` (5s period, 3 failures)
 
 ---
 
