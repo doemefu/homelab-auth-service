@@ -104,6 +104,12 @@ public class SecurityConfig {
      * {@code spring.security.filter.dispatcher-types}), so without the
      * exemptions below that forward was itself denied by this catch-all,
      * collapsing every error response into an empty 403 (#77).
+     * <p>
+     * Only the ERROR dispatch is permitted, not the {@code /error} path itself:
+     * a direct {@code GET /error} falls through to {@code anyRequest().denyAll()},
+     * gets its own 403, and that 403 is then rendered via the same ERROR-dispatch
+     * forward as any other error — it is never exposed as a plain endpoint an
+     * unauthenticated caller can hit directly.
      */
     @Bean
     @Order(999)
@@ -111,7 +117,6 @@ public class SecurityConfig {
         http
                 .authorizeHttpRequests(auth -> auth
                         .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
-                        .requestMatchers("/error").permitAll()
                         .anyRequest().denyAll())
                 // The ERROR-dispatch forward to /error keeps the original HTTP method
                 // (e.g. a CSRF-rejected POST /login). This chain has CSRF enabled by
