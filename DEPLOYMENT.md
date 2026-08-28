@@ -117,9 +117,11 @@ curl -s https://auth.furchert.ch/oauth2/jwks | jq
 
 ## Health checks & monitoring
 
-- **Liveness Probe:** `GET /actuator/health` (30s initial, 10s period, 3 failures)
-- **Readiness Probe:** `GET /actuator/health` (20s initial, 5s period, 3 failures)
+- **Startup Probe:** `GET /actuator/health` (5s period, 60 failures — 300s budget). JVM startup takes 65-95s at the 1 CPU limit on the fastest node (mba1) and can exceed 150s under contention on the 4-core node; the budget keeps roughly 2x margin over the worst observed case.
+- **Liveness Probe:** `GET /actuator/health` (10s period, 3 failures)
+- **Readiness Probe:** `GET /actuator/health` (5s period, 3 failures)
 - **Endpoints:** `/actuator/health`, `/actuator/info` (unauthenticated)
+- **Resources:** 1 CPU limit / 100m request, 512Mi memory limit / 256Mi request
 
 ---
 
