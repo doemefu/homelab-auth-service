@@ -1,16 +1,28 @@
 package ch.furchert.homelab.auth.integration;
 
 import ch.furchert.homelab.auth.AbstractIntegrationTest;
+import com.nimbusds.jose.jwk.source.JWKSource;
+import com.nimbusds.jose.proc.SecurityContext;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
+import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
+import org.springframework.security.oauth2.jwt.JwsHeader;
+import org.springframework.security.oauth2.jwt.JwtClaimsSet;
+import org.springframework.security.oauth2.jwt.JwtEncoder;
+import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
+import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import org.springframework.web.client.RestClient;
 
 import java.net.http.HttpClient;
+import java.time.Instant;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -38,6 +50,9 @@ class ErrorResponseIntegrationTest extends AbstractIntegrationTest {
     @LocalServerPort
     int port;
 
+    @Autowired
+    JWKSource<SecurityContext> jwkSource;
+
     private RestClient client() {
         return RestClient.builder()
                 .baseUrl("http://localhost:" + port)
@@ -49,9 +64,13 @@ class ErrorResponseIntegrationTest extends AbstractIntegrationTest {
                                 .version(HttpClient.Version.HTTP_1_1)
                                 .followRedirects(HttpClient.Redirect.NEVER)
                                 .build()))
-                // Treat every status as "not an error" so retrieve() never throws for 3xx/4xx —
-                // we assert on the raw ResponseEntity instead.
-                .defaultStatusHandler(status -> true, (req, res) -> { })
+                // Treat 4xx/5xx as "not an error" so retrieve() never throws for the error
+                // responses under test — we assert on the raw ResponseEntity instead. 3xx
+                // redirects are excluded from the predicate on purpose: RestClient's default
+                // status handling never throws for 3xx anyway, so widening the match to "any
+                // status" (including 2xx) would silently swallow future assertions on success
+                // responses too.
+                .defaultStatusHandler(HttpStatusCode::isError, (req, res) -> { })
                 .build();
     }
 
@@ -103,9 +122,47 @@ class ErrorResponseIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void logoutWithUnresolvableIdTokenHintRedirectsToLoginLogout() {
+    void logoutWithBogusIdTokenHintReturnsRenderedErrorPage() {
+        // A hint that is not a validly-signed JWT can never prove it came from this IdP,
+        // so the handler must fall back to the standard 400 error page rather than ending
+        // the caller's session — otherwise "id_token_hint=bogus" would be a cross-site
+        // forced-logout link (Copilot round-3 finding).
         ResponseEntity<String> response = client().get()
                 .uri("/connect/logout?id_token_hint=bogus&post_logout_redirect_uri=https%3A%2F%2Ffurchert.ch")
+                .header(HttpHeaders.ACCEPT, MediaType.TEXT_HTML_VALUE)
+                .retrieve()
+                .toEntity(String.class);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(400);
+        assertThat(response.getHeaders().getContentType()).isNotNull();
+        assertThat(response.getHeaders().getContentType().toString()).startsWith(MediaType.TEXT_HTML_VALUE);
+        assertThat(response.getBody()).isNotBlank();
+    }
+
+    @Test
+    void logoutWithStaleButGenuineIdTokenHintRedirectsToLoginLogout() {
+        // A token that is genuinely signed by this server — even though it is long expired
+        // and its authorization row has been purged, so Spring Authorization Server's own
+        // lookup fails with invalid_token — is proof of a legitimate former RP session. The
+        // handler must still end the local session in that case (unlike the bogus-hint case
+        // above), since SAS cannot resolve it.
+        Instant issuedAt = Instant.now().minusSeconds(8 * 24 * 60 * 60);
+        Instant expiresAt = issuedAt.plusSeconds(30 * 60);
+
+        JwtEncoder encoder = new NimbusJwtEncoder(jwkSource);
+        JwsHeader header = JwsHeader.with(SignatureAlgorithm.RS256).build();
+        JwtClaimsSet claims = JwtClaimsSet.builder()
+                .issuer("https://auth.test.local")
+                .subject("stale-user")
+                .audience(List.of("furchert-ch"))
+                .issuedAt(issuedAt)
+                .expiresAt(expiresAt)
+                .id("test")
+                .build();
+        String token = encoder.encode(JwtEncoderParameters.from(header, claims)).getTokenValue();
+
+        ResponseEntity<String> response = client().get()
+                .uri("/connect/logout?id_token_hint=" + token + "&post_logout_redirect_uri=https%3A%2F%2Ffurchert.ch")
                 .retrieve()
                 .toEntity(String.class);
 
