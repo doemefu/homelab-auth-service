@@ -47,6 +47,10 @@
 - Proprietary `TokenCleanupScheduler` (replaced by a new scheduler purging `oauth2_authorization`)
 - Proprietary auth endpoints: `POST /api/v1/auth/login`, `POST /api/v1/auth/refresh`, `POST /api/v1/auth/logout`, `GET /api/v1/auth/jwks`
 
+### Fixed
+
+- k8s: raise CPU limit to 1 CPU and startupProbe budget to 300 s — pods scheduled on the 4-core node exceeded the 150 s startup budget under the 500m quota and crash-looped (#74).
+
 ---
 
 ## [0.1.0] — Initial release
