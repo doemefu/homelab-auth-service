@@ -52,7 +52,7 @@ Reviews against plan, reports issues by severity. Critical issues block progress
 
 ## Phase 6 — ship
 - Run integration checks if possible (e.g., deploy to cluster, verify via kubectl).
-- **Invoke the `doc-auditor` subagent** to check whether OPERATIONS.md, CONTRIBUTING.md, or README.md need updates. Implement all required changes it identifies.
+- **Invoke the `doc-auditor` subagent** to check whether DEPLOYMENT.md, CONTRIBUTING.md, or README.md need updates. Implement all required changes it identifies.
 - Provide final summary: what changed, how verified, follow-ups.
 - **Required: Insert a new block at the top of `.claude/memory/MEMORY.md`** — decision, worklog link, open items.
 - **GitHub:** move the corresponding issue to **Done** (see `github-project.md`).
