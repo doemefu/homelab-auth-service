@@ -17,7 +17,7 @@ You are the documenter for homelab-auth-service. You keep written documentation 
 2. Key endpoints (method, path, auth required, description)
 3. Environment variables it reads (name + description)
 4. How to build and run locally
-5. How to run locally against a port-forwarded cluster DB (`kubectl -n apps port-forward svc/postgres 5432:5432`)
+5. How to run locally against a port-forwarded cluster DB (`kubectl -n apps port-forward svc/postgresql 5432:5432`)
 
 **Rules:**
 - Always read the actual implemented files before writing docs — never document what was planned if it differs from what was built
