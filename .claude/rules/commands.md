@@ -13,7 +13,7 @@ docker build -t auth-service .    # Build Docker image
 
 ## Cluster access (local dev)
 ```bash
-kubectl port-forward -n apps svc/postgres 5432:5432    # PostgreSQL
+kubectl port-forward -n apps svc/postgresql 5432:5432  # PostgreSQL (service is `postgresql`, not `postgres`)
 kubectl get nodes -o wide                              # Check cluster status
 kubectl get pods -n apps                               # List pods
 ```

@@ -4,9 +4,11 @@
 
 > **After each completed change:** Insert a new block **at the top** of `.claude/memory/MEMORY.md`. The file grows top-down — newest entries always visible first.
 
+> `.claude/memory/` and `.claude/worklogs/` are gitignored — local-only; cross-check `git log` and GitHub when they look stale.
+
 ## Service Overview
 
-JWT authentication service for the doemefu homelab IoT ecosystem. Issues access/refresh tokens (jjwt + RSA), manages users, and exposes a JWKS endpoint for other services to validate tokens.
+JWT authentication service for the doemefu homelab IoT ecosystem. Issues OAuth2/OIDC access, ID, and refresh tokens (RSA-signed, via Spring Authorization Server), manages users, and exposes a JWKS endpoint for other services to validate tokens.
 
 **Port:** 8080
 **Package:** `ch.furchert.homelab.auth`
@@ -14,10 +16,10 @@ JWT authentication service for the doemefu homelab IoT ecosystem. Issues access/
 
 ## Architecture Context
 
-This is 1 of 3 microservices. The other two (device-service, data-service) validate JWTs by fetching the RSA public key from this service's `/auth/jwks` endpoint. This service is fully self-contained — no runtime calls to other services.
+device-service and furchert-ch consume tokens issued by this service — device-service validates JWTs via the JWKS endpoint (`/oauth2/jwks`), furchert-ch authenticates its OIDC-gated `/dashboard` via full OIDC login against this IdP. Open WebUI, n8n, and LiteLLM are additionally registered as OIDC clients. data-service is planned to integrate the same way once deployed. This service makes no runtime calls to other services — it is purely a producer of tokens and identity.
 
 **Full architecture spec:** `../docs/052-architecture-target.md`
-**Implementation plan:** `PLAN.md`
+**Implementation plan:** `docs/PLAN.md`
 
 ## Non-Negotiables
 
@@ -26,7 +28,8 @@ This is 1 of 3 microservices. The other two (device-service, data-service) valid
 - Do **not** use `ddl-auto=update` or `ddl-auto=create` — Flyway only
 - Do **not** log passwords, tokens, or secrets in any form
 - Do **not** introduce new dependencies without explicit user approval
-- Do **not** commit things. Provide a commit message and wait for the user.
+- Commit, push and open PRs on feature branches without asking (standing permission, 2026-08-28). Merging, force-pushes, playbook runs, cluster mutations and anything touching SOPS/secrets need an explicit go for that task.
+- Before any merge, wait for the Copilot review and fix or answer every comment (see `.claude/rules/workflow.md` Phase 5).
 - All comments and documentation in **English**
 - Minimize diff size: no drive-by refactors
 
@@ -35,12 +38,13 @@ This is 1 of 3 microservices. The other two (device-service, data-service) valid
 | Component | Version |
 |-----------|---------|
 | Java | 25 |
-| Spring Boot | 4.0.6 |
-| jjwt | 0.12.6 |
-| springdoc-openapi | 3.0.3 |
+| Spring Boot | 4.1.1 |
+| Spring Authorization Server | via `spring-boot-starter-oauth2-authorization-server` (Spring Boot 4.1 BOM-managed) |
+| springdoc-openapi | 3.1.0 |
 | Testcontainers BOM | 2.0.5 (project-managed via dependencyManagement import) |
+| Base image | `eclipse-temurin:25-jre-alpine` (build stage: `eclipse-temurin:25-jdk-alpine`) |
 
-## Spring Boot 4.0 Notes
+## Spring Boot 4.1 Notes
 
 - Flyway via `spring-boot-starter-flyway` (no separate dialect dep)
 - Jackson 3 (`tools.jackson` group ID)
@@ -49,15 +53,17 @@ This is 1 of 3 microservices. The other two (device-service, data-service) valid
 
 ## Agent Team
 
-Five project-level agents in `.claude/agents/` handle bigger implementations.
+Seven project-level agents in `.claude/agents/` handle bigger implementations.
 
 | Agent | Model | Role |
 |-------|-------|------|
-| `architect` | opus | Writes `CONTRACTS.md` — exact API/DB/MQTT specs before any service is built |
-| `implementer` | sonnet | Builds services in order based on `CONTRACTS.md` |
-| `reviewer` | opus | Reviews each service for security and contract compliance |
-| `documenter` | sonnet | Keeps docs and per-service READMEs accurate |
-| `devops` | sonnet | Handles K8s manifests, verifies deployment |
+| `architect` | opus | Writes contract specs for changes that affect other services — into `INTERFACES.md`, or `../docs/` for cross-repo specs — before implementation begins |
+| `implementer` | sonnet | Implements the plan: Java/Spring Boot code, Flyway migrations, tests |
+| `reviewer` | opus | Reviews implemented code for security and contract compliance against `INTERFACES.md` |
+| `documenter` | sonnet | Keeps `docs/PLAN.md`, `CLAUDE.md`, and `README.md` accurate as work lands |
+| `devops` | sonnet | Verifies K8s manifests and cluster health after deploys (read-only `kubectl`) |
+| `plan-reviewer` | (inherit) | Phase 3 review — defects and architectural soundness of the plan |
+| `doc-auditor` | (inherit) | Phase 6 doc audit — checks README/DEPLOYMENT/CONTRIBUTING/CHANGELOG for gaps |
 
 ## Service-Specific Conventions
 
@@ -88,4 +94,5 @@ Detailed process rules are in `.claude/rules/` (auto-loaded by Claude Code):
 | `commands.md` | Build, test, cluster access commands |
 | `code-style-conventions.md` | Java/Spring Boot, Lombok, Flyway, secrets |
 | `review-guidelines.md` | Security, diffs, version pinning, tests |
-| `documentation-files.md` | README, OVERVIEW, INTERFACES, DEPLOYMENT, CONTRIBUTING, CHANGELOG |
+| `documentation-files.md` | README, OVERVIEW, INTERFACES, DEPLOYMENT, CONTRIBUTING, CHANGELOG, docs/INDEX, docs/DEVELOPMENT |
+| `github-project.md` | GitHub Project #5 status transitions |
