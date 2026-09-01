@@ -156,8 +156,6 @@ The service expects a PostgreSQL database at `localhost:5432` with database name
 kubectl port-forward -n apps svc/postgresql 5432:5432
 ```
 
-**Note:** Some older documentation may reference `svc/postgres`. Use the service name that exists in your cluster. For this setup, it's `svc/postgresql`.
-
 ### 4. Set Environment Variables
 
 ```bash

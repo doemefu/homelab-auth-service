@@ -136,7 +136,7 @@ Files: `<!-- path -->`
 
 ### Ship notes
 
-- Docs to verify: `README.md`, `OPERATIONS.md`, `CONTRIBUTING.md`, `DEPLOYMENT.md`
+- Docs to verify: `README.md`, `CONTRIBUTING.md`, `DEPLOYMENT.md`
 - User actions required: <!-- none or list -->
 - Follow-ups: <!-- none or list -->
 
@@ -265,7 +265,6 @@ $ <command>
 
 **Docs updated (per doc-auditor):**
 - [ ] `README.md` - <!-- section or "not affected" -->
-- [ ] `OPERATIONS.md` - <!-- section or "not affected" -->
 - [ ] `CONTRIBUTING.md` - <!-- section or "not affected" -->
 - [ ] `DEPLOYMENT.md` - <!-- section or "not affected" -->
 
