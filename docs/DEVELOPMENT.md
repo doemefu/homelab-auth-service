@@ -206,27 +206,29 @@ curl -s http://localhost:8080/oauth2/jwks | jq
 
 ## Running Tests
 
-### Unit Tests (No Docker Required)
+No `maven-failsafe-plugin` is bound in `pom.xml`, so `./mvnw test` and `./mvnw verify`
+run the same thing: everything Maven Surefire's default include glob (`**/*Test.java`)
+matches. That includes plain unit tests, `@WebMvcTest` slices, and every
+Testcontainers-backed class under `src/test/.../integration/` whose filename ends in
+`Test.java` — running `./mvnw test` therefore already requires Docker to be running.
+A class suffixed `*IT.java` instead (there is currently one: `DeviceClientLifecycleIT`)
+is **not** matched by Surefire's default glob and does not run under either command
+— see #85.
 
 ```bash
-# Run only unit tests
+# Runs everything Surefire's default glob matches (Docker required - see above)
 ./mvnw test
 
 # Run a specific test class
 ./mvnw test -Dtest=UserServiceTest
 
-# Run tests for a specific package
+# Run tests for a specific package (matches every class regardless of *Test/*IT suffix)
 ./mvnw test -Dtest='ch.furchert.homelab.auth.service.*'
-```
 
-### Integration Tests (Docker Required)
-
-```bash
-# Run full suite including Testcontainers integration tests
-./mvnw verify
-
-# Run only integration tests
-./mvnw test -Dtest='*IntegrationTest'
+# Run only the classes under integration/ (matches *Test.java and *IT.java alike,
+# unlike a '*IntegrationTest' name filter which would miss FlywayMigrationTest and
+# DeviceClientAuthorizationTest)
+./mvnw test -Dtest='ch.furchert.homelab.auth.integration.*'
 ```
 
 ### Test Structure

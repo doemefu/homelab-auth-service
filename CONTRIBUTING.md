@@ -148,10 +148,14 @@ curl -s http://localhost:8080/oauth2/jwks | jq
 ## Running Tests
 
 ```bash
-# Unit tests only
+# Runs unit tests, @WebMvcTest slices, and the Testcontainers-backed classes
+# under src/test/.../integration/ named *Test.java (Docker required for
+# those) - Surefire's default include glob picks up all of them.
 ./mvnw test
 
-# Full suite including integration tests (requires Docker)
+# No maven-failsafe-plugin is bound in pom.xml, so this currently runs
+# nothing beyond `./mvnw test`. IT-suffixed classes (e.g.
+# DeviceClientLifecycleIT) are NOT picked up by either command - see #85.
 ./mvnw verify
 
 # Specific test
