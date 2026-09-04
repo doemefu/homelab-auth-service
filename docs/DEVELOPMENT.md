@@ -485,7 +485,7 @@ HASH=$(htpasswd -bnBC 12 "" yourpassword | tr -d ':\n')
 
 Before merging a PR, verify:
 
-- [ ] All tests pass (`./mvnw verify`)
+- [ ] All tests pass (`./mvnw verify`; note `*IT.java`-suffixed classes such as `DeviceClientLifecycleIT` are not executed by this command — see #85 and "Running Tests" above)
 - [ ] No drive-by refactors or style-only changes
 - [ ] All comments and documentation are in English
 - [ ] New features have unit tests
@@ -592,7 +592,7 @@ The project uses GitHub Actions for CI/CD:
 
 - **Workflow:** `.github/workflows/build.yml`
 - **Trigger:** Every push and PR to `main`
-- **Test Job:** Runs `./mvnw verify` (unit + integration tests)
+- **Test Job:** Runs `./mvnw verify` — equivalent to `./mvnw test` in this repo (no `maven-failsafe-plugin` bound); executes unit tests, `@WebMvcTest` slices, and Testcontainers-backed classes named `*Test.java` under `integration/`. Classes suffixed `*IT.java` (e.g. `DeviceClientLifecycleIT`) are not executed — see #85 and "Running Tests" above.
 - **Build Job:** Multi-arch Docker image (`linux/amd64` + `linux/arm64`) pushed to `ghcr.io/doemefu/homelab-auth-service`
 
 **Tags Pushed:**

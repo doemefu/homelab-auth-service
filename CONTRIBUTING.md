@@ -247,7 +247,7 @@ SELECT * FROM flyway_schema_history_auth ORDER BY installed_rank;
 
 ## Code Review Checklist
 
-- [ ] All tests pass (`./mvnw verify`)
+- [ ] All tests pass (`./mvnw verify`; note `*IT.java`-suffixed classes such as `DeviceClientLifecycleIT` are not executed by this command — see #85 and "Running Tests" above)
 - [ ] No drive-by refactors or style-only changes
 - [ ] All comments in English
 - [ ] New features have unit tests
