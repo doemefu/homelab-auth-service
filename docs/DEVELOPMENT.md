@@ -206,27 +206,29 @@ curl -s http://localhost:8080/oauth2/jwks | jq
 
 ## Running Tests
 
-### Unit Tests (No Docker Required)
+No `maven-failsafe-plugin` is bound in `pom.xml`, so `./mvnw test` and `./mvnw verify`
+run the same thing: everything Maven Surefire's default include glob (`**/*Test.java`)
+matches. That includes plain unit tests, `@WebMvcTest` slices, and every
+Testcontainers-backed class under `src/test/.../integration/` whose filename ends in
+`Test.java` — running `./mvnw test` therefore already requires Docker to be running.
+A class suffixed `*IT.java` instead (there is currently one: `DeviceClientLifecycleIT`)
+is **not** matched by Surefire's default glob and does not run under either command
+— see #85.
 
 ```bash
-# Run only unit tests
+# Runs everything Surefire's default glob matches (Docker required - see above)
 ./mvnw test
 
 # Run a specific test class
 ./mvnw test -Dtest=UserServiceTest
 
-# Run tests for a specific package
+# Run tests for a specific package (matches every class regardless of *Test/*IT suffix)
 ./mvnw test -Dtest='ch.furchert.homelab.auth.service.*'
-```
 
-### Integration Tests (Docker Required)
-
-```bash
-# Run full suite including Testcontainers integration tests
-./mvnw verify
-
-# Run only integration tests
-./mvnw test -Dtest='*IntegrationTest'
+# Run only the classes under integration/ (matches *Test.java and *IT.java alike,
+# unlike a '*IntegrationTest' name filter which would miss FlywayMigrationTest and
+# DeviceClientAuthorizationTest)
+./mvnw test -Dtest='ch.furchert.homelab.auth.integration.*'
 ```
 
 ### Test Structure
@@ -483,7 +485,7 @@ HASH=$(htpasswd -bnBC 12 "" yourpassword | tr -d ':\n')
 
 Before merging a PR, verify:
 
-- [ ] All tests pass (`./mvnw verify`)
+- [ ] All tests pass (`./mvnw verify`; note `*IT.java`-suffixed classes such as `DeviceClientLifecycleIT` are not executed by this command — see #85 and "Running Tests" above)
 - [ ] No drive-by refactors or style-only changes
 - [ ] All comments and documentation are in English
 - [ ] New features have unit tests
@@ -590,7 +592,7 @@ The project uses GitHub Actions for CI/CD:
 
 - **Workflow:** `.github/workflows/build.yml`
 - **Trigger:** Every push and PR to `main`
-- **Test Job:** Runs `./mvnw verify` (unit + integration tests)
+- **Test Job:** Runs `./mvnw verify` — equivalent to `./mvnw test` in this repo (no `maven-failsafe-plugin` bound); executes unit tests, `@WebMvcTest` slices, and Testcontainers-backed classes named `*Test.java` under `integration/`. Classes suffixed `*IT.java` (e.g. `DeviceClientLifecycleIT`) are not executed — see #85 and "Running Tests" above.
 - **Build Job:** Multi-arch Docker image (`linux/amd64` + `linux/arm64`) pushed to `ghcr.io/doemefu/homelab-auth-service`
 
 **Tags Pushed:**
