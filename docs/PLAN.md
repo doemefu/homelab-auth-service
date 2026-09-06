@@ -314,9 +314,11 @@ springdoc:
 Minimum required in `k8s/deployment.yaml`:
 - Namespace: `apps`
 - Image: `ghcr.io/doemefu/homelab-auth-service:<version>` — never `latest`
-- Resources: `requests: {cpu: 100m, memory: 256Mi}` / `limits: {cpu: 500m, memory: 512Mi}`
+- Resources: `requests: {cpu: 100m, memory: 256Mi}` / `limits: {cpu: 1000m, memory: 512Mi}`
+- Startup probe: `GET /actuator/health` — `failureThreshold: 60, periodSeconds: 5` (300 s budget; see #74)
 - Liveness probe: `GET /actuator/health` — `initialDelaySeconds: 30, periodSeconds: 10`
 - Readiness probe: `GET /actuator/health` — `initialDelaySeconds: 20, periodSeconds: 5`
+  (Note: the liveness/readiness `initialDelaySeconds` values above no longer match `k8s/deployment.yaml` — both probes rely on the startup probe above instead; out of scope for #81.)
 - RSA keys: volumeMount from K8s Secret (`homelab-auth-rsa-keys`) at `/etc/secrets/`
 - Env: `APP_JWT_PRIVATE_KEY=file:/etc/secrets/private.pem`, `APP_JWT_PUBLIC_KEY=file:/etc/secrets/public.pem`, `DB_USERNAME` + `DB_PASSWORD` from `secretKeyRef`
 
