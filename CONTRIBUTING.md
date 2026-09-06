@@ -148,10 +148,14 @@ curl -s http://localhost:8080/oauth2/jwks | jq
 ## Running Tests
 
 ```bash
-# Unit tests only
+# Runs unit tests, @WebMvcTest slices, and the Testcontainers-backed classes
+# under src/test/.../integration/ named *Test.java (Docker required for
+# those) - Surefire's default include glob picks up all of them.
 ./mvnw test
 
-# Full suite including integration tests (requires Docker)
+# No maven-failsafe-plugin is bound in pom.xml, so this currently runs
+# nothing beyond `./mvnw test`. IT-suffixed classes (e.g.
+# DeviceClientLifecycleIT) are NOT picked up by either command - see #85.
 ./mvnw verify
 
 # Specific test
@@ -243,7 +247,7 @@ SELECT * FROM flyway_schema_history_auth ORDER BY installed_rank;
 
 ## Code Review Checklist
 
-- [ ] All tests pass (`./mvnw verify`)
+- [ ] All tests pass (`./mvnw verify`; note `*IT.java`-suffixed classes such as `DeviceClientLifecycleIT` are not executed by this command — see #85 and "Running Tests" above)
 - [ ] No drive-by refactors or style-only changes
 - [ ] All comments in English
 - [ ] New features have unit tests
