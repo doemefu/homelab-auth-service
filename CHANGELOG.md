@@ -37,6 +37,7 @@
 - OIDC client secret env vars must include the Spring Security `{id}` prefix (e.g. `{noop}secret`)
 - Registered clients moved from in-memory to JDBC (`oauth2_registered_client`); after first boot, YAML edits to client definitions are no-ops — manage via `psql` or `/api/v1/clients`
 - `device-service` OIDC client extended to multi-grant (`authorization_code` + `refresh_token` + `client_credentials`) with new `clients:admin` scope (for service-to-service calls to `/api/v1/clients`)
+- `furchert-ch` OIDC client extended to multi-grant (`authorization_code` + `refresh_token` + `client_credentials`) with new `netmon:read` scope, so furchert-ch can fetch a service token for data-service (network monitoring NM-0, homelab#114 / #93, `docs/060-network-monitoring.md` §7.5). Flyway V6 applies the grant and scope to existing databases idempotently.
 - `JwtAuthenticationConverter` now emits both `ROLE_*` (from `role` claim) and `SCOPE_*` (from `scope` claim) authorities
 
 ### Removed
