@@ -16,7 +16,7 @@ JWT authentication service for the doemefu homelab IoT ecosystem. Issues OAuth2/
 
 ## Architecture Context
 
-device-service and furchert-ch consume tokens issued by this service — device-service validates JWTs via the JWKS endpoint (`/oauth2/jwks`), furchert-ch authenticates its OIDC-gated `/dashboard` via full OIDC login against this IdP. Open WebUI, n8n, and LiteLLM are additionally registered as OIDC clients. data-service is planned to integrate the same way once deployed. This service makes no runtime calls to other services — it is purely a producer of tokens and identity.
+device-service and furchert-ch consume tokens issued by this service — device-service validates JWTs via the JWKS endpoint (`/oauth2/jwks`), furchert-ch authenticates its OIDC-gated `/dashboard` via full OIDC login against this IdP. Open WebUI, n8n, and LiteLLM are additionally registered as OIDC clients. data-service (deployed 2026-09-23) validates JWTs via the JWKS endpoint like device-service; furchert-ch additionally fetches `client_credentials` tokens with scope `netmon:read` for it (V6); NM-4 adds the `data-service` client (scope `login-events:read`) that pulls login events. This service makes no runtime calls to other services — it is purely a producer of tokens and identity.
 
 **Full architecture spec:** `../docs/052-architecture-target.md`
 **Implementation plan:** `docs/PLAN.md`
