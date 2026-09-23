@@ -81,6 +81,11 @@ kubectl create secret generic homelab-auth-secrets -n apps \
 rm private.pem public.pem
 ```
 
+   Optional keys in `homelab-auth-secrets` for the login-event outbox (NM-4, see `INTERFACES.md` §2 "data-service"):
+   `data-service-client-secret` (`{noop}<secret>`) and `login-event-hmac-key` (at least 32 characters, e.g. `openssl rand -hex 32`).
+   Both are wired with `optional: true`. Without them, auth-service starts normally and login-event capture stays off.
+   In production these keys come from SOPS through playbook 59.
+
 2. **Configure Cloudflare Tunnel** (see above)
 
 3. **Bootstrap first admin:**
