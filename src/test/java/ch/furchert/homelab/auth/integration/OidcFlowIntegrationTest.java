@@ -19,6 +19,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.Base64;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
@@ -267,7 +268,12 @@ class OidcFlowIntegrationTest extends AbstractIntegrationTest {
 
         assertThat(claims.get("sub").asString()).isEqualTo("furchert-ch");
         assertThat(claims.get("iss").asString()).isEqualTo("https://auth.test.local");
-        assertThat(claims.get("aud").toString()).contains("\"furchert-ch\"");
+        // A single audience may be serialized as a string or as a one-element array.
+        JsonNode aud = claims.get("aud");
+        List<String> audiences = aud.isArray()
+                ? aud.values().stream().map(JsonNode::asString).toList()
+                : List.of(aud.asString());
+        assertThat(audiences).containsExactly("furchert-ch");
         assertThat(claims.get("scope").isArray()).isTrue();
         assertThat(claims.get("scope").values().stream().map(JsonNode::asString).toList())
                 .containsExactly("netmon:read");

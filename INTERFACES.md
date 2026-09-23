@@ -244,6 +244,13 @@ curl -s -u "furchert-ch:${OIDC_CLIENT_SECRET}" \
   http://auth-service.apps.svc.cluster.local:8080/oauth2/token
 ```
 
+Transport: this call is cluster-internal plain HTTP, the same path as every other
+in-cluster call to auth-service (TLS terminates at the Cloudflare edge), so the
+client secret crosses the cluster pod network as Basic auth. No NetworkPolicy
+restricts who can reach auth-service today; the mitigation is the NetworkPolicy
+follow-up in `../docs/060-network-monitoring.md` §10 (auth-service :8080 ingress
+only from cloudflared, furchert-ch and data-service).
+
 The access token carries `sub=furchert-ch`, `aud=furchert-ch` and
 `scope=["netmon:read"]`, with no `role` and no `device_id` claim. Only explicitly
 requested scopes are granted, and a client without `netmon:read` gets
