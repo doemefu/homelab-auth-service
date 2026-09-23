@@ -26,7 +26,15 @@
 - `@EnableMethodSecurity` enabled globally on `SecurityConfig` so `@PreAuthorize` works on controllers
 - `app.oidc.device-clients.access-token-ttl-seconds` (default 3600) and `allowed-scopes` config properties
 
+- Login-event outbox for network monitoring (NM-4, homelab#114 / #94, `docs/060-network-monitoring.md` §7.6). A Spring Security event listener records every form-login attempt with outcome `success`/`failure`/`locked`, client IP from `CF-Connecting-IP` or the remote address, an HMAC-SHA256 username hash, and the plaintext subject on success only. A bounded background writer stores them in the new `login_event_outbox` table (Flyway V7), which is purged hourly after 72 h.
+- `GET /api/v1/login-events?after&limit`: id-cursor pull endpoint for data-service, gated by `@PreAuthorize("hasAuthority('SCOPE_login-events:read')")`
+- `data-service` registered client (`client_credentials`, scope `login-events:read`, no redirect URIs)
+- Optional env vars `DATA_SERVICE_CLIENT_SECRET` and `LOGIN_EVENT_HMAC_KEY` (Secret `homelab-auth-secrets` keys `data-service-client-secret` and `login-event-hmac-key`, both `optional: true`). While either is absent, the feature is off with one startup WARN and the endpoint answers `503`.
+
 ### Changed
+
+- `StaticClientSeeder` skips clients whose secret resolves to blank. This makes optional clients such as `data-service` possible.
+- A non-numeric query parameter now returns `400` instead of `500` (`MethodArgumentTypeMismatchException` handler).
 
 - Token storage migrated from `refresh_tokens` table to `oauth2_authorization` table (Flyway V3)
 - `TokenCleanupScheduler` now purges expired `oauth2_authorization` records (was: `refresh_tokens`)

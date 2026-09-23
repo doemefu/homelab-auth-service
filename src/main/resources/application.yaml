@@ -94,6 +94,19 @@ app:
         # token with netmon:read for data-service, docs/060 §7.5). Existing databases
         # get the extra grant + scope via Flyway V6 — the seeder skips existing clients.
         grant-types: [ authorization_code, refresh_token, client_credentials ]
+      - client-id: data-service
+        # Pulls the login-event outbox (docs/060 §7.6). OPTIONAL: the empty default keeps the IdP
+        # starting when the Secret key does not exist yet; a blank secret means the seeder skips
+        # this client and login-event capture stays off (one WARN at startup).
+        # When set, the value must include the Spring Security {id} prefix, e.g. "{noop}secret".
+        client-secret: "${DATA_SERVICE_CLIENT_SECRET:}"
+        scopes: [ "login-events:read" ]
+        grant-types: [ client_credentials ]
+
+  # Login-event outbox (NM-4, docs/060 §7.6). Disabled unless LOGIN_EVENT_HMAC_KEY (>= 32 chars)
+  # and DATA_SERVICE_CLIENT_SECRET are both set. Other settings default in LoginEventProperties.
+  login-events:
+    hmac-key: "${LOGIN_EVENT_HMAC_KEY:}"
 
 management:
   endpoints:

@@ -81,6 +81,23 @@ spec:
                 secretKeyRef:
                   name: homelab-auth-secrets
                   key: furchert-ch-client-secret # value = {noop}<plaintext> via SOPS
+            # NM-4 login-event outbox (docs/060 §7.6/§9). Both keys are optional ON PURPOSE:
+            # this Deployment is Flux-auto-deployed on merge and auth-service is the sole IdP, so a
+            # Secret key that playbook 59 has not created yet must not stop the pod (all SSO down).
+            # While either is absent the app starts normally, skips the data-service client and
+            # logs one WARN that login-event capture is disabled.
+            - name: DATA_SERVICE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: homelab-auth-secrets
+                  key: data-service-client-secret # value = {noop}<plaintext> via SOPS
+                  optional: true
+            - name: LOGIN_EVENT_HMAC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: homelab-auth-secrets
+                  key: login-event-hmac-key # e.g. openssl rand -hex 32; never rotate casually
+                  optional: true
           volumeMounts:
             - name: rsa-keys
               mountPath: /etc/secrets
