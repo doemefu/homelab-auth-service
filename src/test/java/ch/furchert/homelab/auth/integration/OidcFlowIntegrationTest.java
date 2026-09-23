@@ -110,20 +110,31 @@ class OidcFlowIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void fullAuthCodeFlowIssuesTokens() throws Exception {
+        runFullAuthCodeFlow("test-client", "test-secret", "https://app.test.local/callback");
+    }
+
+    @Test
+    void furchertChAuthCodeFlowWithPkceStillWorksAlongsideClientCredentials() throws Exception {
+        // NM-0 (#93): adding client_credentials + netmon:read must not break the dashboard SSO login.
+        runFullAuthCodeFlow("furchert-ch", "furchert-ch-secret",
+                "https://furchert.test.local/api/auth/callback/furchert-ch");
+    }
+
+    private void runFullAuthCodeFlow(String clientId, String clientSecret, String redirectUri) throws Exception {
         String codeVerifier = generateCodeVerifier();
         String codeChallenge = generateCodeChallenge(codeVerifier);
 
         // Step 1: GET /oauth2/authorize → 302 to /login
         MvcResult authorizeResult = mockMvc.perform(get("/oauth2/authorize")
                         .param("response_type", "code")
-                        .param("client_id", "test-client")
-                        .param("redirect_uri", "https://app.test.local/callback")
+                        .param("client_id", clientId)
+                        .param("redirect_uri", redirectUri)
                         .param("scope", "openid profile email")
                         .param("state", "test-state")
                         .param("code_challenge", codeChallenge)
                         .param("code_challenge_method", "S256")
                         .with(request -> {
-                            request.setQueryString(buildQueryString(codeChallenge));
+                            request.setQueryString(buildQueryString(codeChallenge, clientId, redirectUri));
                             return request;
                         }))
                 .andExpect(status().is3xxRedirection())
@@ -151,15 +162,15 @@ class OidcFlowIntegrationTest extends AbstractIntegrationTest {
         assertThat(session).isNotNull();
         MvcResult codeResult = mockMvc.perform(get("/oauth2/authorize")
                         .param("response_type", "code")
-                        .param("client_id", "test-client")
-                        .param("redirect_uri", "https://app.test.local/callback")
+                        .param("client_id", clientId)
+                        .param("redirect_uri", redirectUri)
                         .param("scope", "openid profile email")
                         .param("state", "test-state")
                         .param("code_challenge", codeChallenge)
                         .param("code_challenge_method", "S256")
                         .session(session)
                         .with(request -> {
-                            request.setQueryString(buildQueryString(codeChallenge));
+                            request.setQueryString(buildQueryString(codeChallenge, clientId, redirectUri));
                             return request;
                         }))
                 .andExpect(status().is3xxRedirection())
@@ -174,10 +185,10 @@ class OidcFlowIntegrationTest extends AbstractIntegrationTest {
         MvcResult tokenResult = mockMvc.perform(post("/oauth2/token")
                         .param("grant_type", "authorization_code")
                         .param("code", code)
-                        .param("redirect_uri", "https://app.test.local/callback")
+                        .param("redirect_uri", redirectUri)
                         .param("code_verifier", codeVerifier)
                         .header("Authorization", "Basic " + Base64.getEncoder().encodeToString(
-                                "test-client:test-secret".getBytes(StandardCharsets.UTF_8))))
+                                (clientId + ":" + clientSecret).getBytes(StandardCharsets.UTF_8))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.access_token").exists())
                 .andExpect(jsonPath("$.id_token").exists())
@@ -234,6 +245,68 @@ class OidcFlowIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void furchertChCanMintNetmonReadServiceToken() throws Exception {
+        // NM-0 (#93, docs/060 §7.5): furchert-ch fetches a service token for data-service.
+        String basic = Base64.getEncoder().encodeToString(
+                "furchert-ch:furchert-ch-secret".getBytes(StandardCharsets.UTF_8));
+
+        MvcResult result = mockMvc.perform(post("/oauth2/token")
+                        .header("Authorization", "Basic " + basic)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_FORM_URLENCODED)
+                        .content("grant_type=client_credentials&scope=netmon:read"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.access_token").exists())
+                .andExpect(jsonPath("$.token_type").value("Bearer"))
+                .andExpect(jsonPath("$.id_token").doesNotExist())
+                .andReturn();
+
+        JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
+        String accessToken = body.get("access_token").asString();
+        JsonNode claims = objectMapper.readTree(new String(
+                Base64.getUrlDecoder().decode(accessToken.split("\\.")[1]), StandardCharsets.UTF_8));
+
+        assertThat(claims.get("sub").asString()).isEqualTo("furchert-ch");
+        assertThat(claims.get("iss").asString()).isEqualTo("https://auth.test.local");
+        assertThat(claims.get("aud").toString()).contains("\"furchert-ch\"");
+        assertThat(claims.get("scope").isArray()).isTrue();
+        assertThat(claims.get("scope").values().stream().map(JsonNode::asString).toList())
+                .containsExactly("netmon:read");
+        // No user principal → no role claim; furchert-ch is client_kind='sso' → no device_id.
+        assertThat(claims.has("role")).isFalse();
+        assertThat(claims.has("device_id")).isFalse();
+    }
+
+    @Test
+    void clientCredentialsRejectsNetmonReadForClientWithoutThatScope() throws Exception {
+        // device-service has the client_credentials grant but not netmon:read.
+        String basic = Base64.getEncoder().encodeToString(
+                "device-service:device-service-secret".getBytes(StandardCharsets.UTF_8));
+
+        mockMvc.perform(post("/oauth2/token")
+                        .header("Authorization", "Basic " + basic)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_FORM_URLENCODED)
+                        .content("grant_type=client_credentials&scope=netmon:read"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("invalid_scope"))
+                .andExpect(jsonPath("$.access_token").doesNotExist());
+    }
+
+    @Test
+    void clientCredentialsRejectedForSsoClientWithoutThatGrant() throws Exception {
+        // test-client stands in for grafana: auth_code + refresh_token only.
+        String basic = Base64.getEncoder().encodeToString(
+                "test-client:test-secret".getBytes(StandardCharsets.UTF_8));
+
+        mockMvc.perform(post("/oauth2/token")
+                        .header("Authorization", "Basic " + basic)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_FORM_URLENCODED)
+                        .content("grant_type=client_credentials&scope=netmon:read"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("unauthorized_client"))
+                .andExpect(jsonPath("$.access_token").doesNotExist());
+    }
+
+    @Test
     void tokenEndpointRejectsInvalidCode() throws Exception {
         mockMvc.perform(post("/oauth2/token")
                         .param("grant_type", "authorization_code")
@@ -269,14 +342,18 @@ class OidcFlowIntegrationTest extends AbstractIntegrationTest {
     // --- helpers ---
 
     private static String buildQueryString(String codeChallenge) {
+        return buildQueryString(codeChallenge, "test-client", "https://app.test.local/callback");
+    }
+
+    private static String buildQueryString(String codeChallenge, String clientId, String redirectUri) {
         // Raw query string for request.setQueryString(). Spring AS's
         // getQueryParameters() checks that each parameter key appears in
         // the query string before including it. The values here don't matter
         // as much — Spring AS reads values from the parameter map, not the
         // query string directly.
         return "response_type=code"
-                + "&client_id=test-client"
-                + "&redirect_uri=https://app.test.local/callback"
+                + "&client_id=" + clientId
+                + "&redirect_uri=" + redirectUri
                 + "&scope=openid+profile+email"
                 + "&state=test-state"
                 + "&code_challenge=" + codeChallenge

@@ -76,7 +76,7 @@ auth-service (this service)
 |--------|------|------|-------------|
 | GET | `/.well-known/openid-configuration` | None | OIDC Discovery document |
 | GET | `/oauth2/authorize` | Session (form login) | Authorization endpoint — initiates OIDC flow |
-| POST | `/oauth2/token` | Client credentials (Basic) | Token endpoint — `authorization_code` (SSO) and `client_credentials` (IoT device) grants |
+| POST | `/oauth2/token` | Client credentials (Basic) | Token endpoint — `authorization_code` (SSO) and `client_credentials` (IoT device, `device-service`, `furchert-ch`) grants |
 | GET | `/oauth2/jwks` | None | JSON Web Key Set — public keys for token validation |
 | GET | `/userinfo` | Bearer token | OIDC UserInfo endpoint — returns user claims |
 | POST | `/connect/logout` | Session | RP-Initiated Logout — redirects to post-logout URL |

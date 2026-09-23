@@ -36,7 +36,7 @@ All OIDC clients should use the following configuration:
 |------------|-----------|-------|
 | Authorization Code | ✅ Yes | With PKCE required |
 | Refresh Token | ✅ Yes | Issued automatically |
-| Client Credentials | ✅ Yes | IoT device clients only — see §8 |
+| Client Credentials | ✅ Yes | IoT device clients (§8), `device-service` (`clients:admin`) and `furchert-ch` (`netmon:read`, §2) |
 | Password | ❌ No | Not supported |
 
 ### Required Scopes
@@ -230,6 +230,27 @@ spring:
           jwk-set-uri: http://auth-service.apps.svc.cluster.local:8080/oauth2/jwks
 ```
 
+### furchert-ch — service token for data-service (`netmon:read`)
+
+The `furchert-ch` client has `authorization_code` + `refresh_token` (dashboard SSO)
+**and** `client_credentials`, with the extra scope `netmon:read`. furchert-ch uses
+it server-side to call the data-service network-monitoring API
+(contract: `../docs/060-network-monitoring.md` §7.5). No new secret: the request
+uses the existing furchert-ch client secret.
+
+```bash
+curl -s -u "furchert-ch:${OIDC_CLIENT_SECRET}" \
+  -d 'grant_type=client_credentials&scope=netmon:read' \
+  http://auth-service.apps.svc.cluster.local:8080/oauth2/token
+```
+
+The access token carries `sub=furchert-ch`, `aud=furchert-ch` and
+`scope=["netmon:read"]`, with no `role` and no `device_id` claim. Only explicitly
+requested scopes are granted, and a client without `netmon:read` gets
+`400 invalid_scope`. Existing databases receive the grant and scope through Flyway
+`V6__furchert_ch_client_credentials.sql`; fresh databases get them from
+`application.yaml` via the seeder.
+
 ---
 
 ## 3. Service-to-Service Token Validation
@@ -365,8 +386,8 @@ To add a new OIDC client to auth-service:
 > `application.yaml` is **bootstrap-only**: `StaticClientSeeder` seeds each
 > entry on first boot and **skips any client that already exists**. After the
 > first boot, editing or removing an existing client in `application.yaml` has
-> no effect — change it via `psql` or, for IoT device clients, the admin API
-> (§8). The steps below apply to the initial bootstrap of a new SSO client.
+> no effect — change it via a Flyway migration (precedent: `V6`, furchert-ch),
+> `psql` or, for IoT device clients, the admin API (§8). The steps below apply to the initial bootstrap of a new SSO client.
 
 ### Step 1: Generate Client Secret
 
