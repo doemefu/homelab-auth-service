@@ -3,7 +3,6 @@ package ch.furchert.homelab.auth.security;
 import jakarta.servlet.http.HttpServletRequest;
 
 import java.net.InetAddress;
-import java.net.UnknownHostException;
 import java.util.regex.Pattern;
 
 /**
@@ -53,9 +52,9 @@ public final class ClientIpResolver {
         }
         if (v.indexOf(':') >= 0 && IPV6_CHARS.matcher(v).matches()) {
             try {
-                // A string containing ':' is parsed as an IPv6 literal; no name resolution happens.
-                return InetAddress.getByName(v).getHostAddress();
-            } catch (UnknownHostException | IllegalArgumentException e) {
+                // ofLiteral (Java 22+) only parses IP literals and never performs a name lookup.
+                return InetAddress.ofLiteral(v).getHostAddress();
+            } catch (IllegalArgumentException e) {
                 return null;
             }
         }

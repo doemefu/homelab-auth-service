@@ -67,4 +67,17 @@ class ClientIpResolverTest {
         assertThat(ip.ip()).isNull();
         assertThat(ip.source()).isEqualTo("remote-addr");
     }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"dead:beef", "cafe::babe::1", "abc:def", "example.invalid", "a.b.c.d"})
+    void hostnameLikeValuesAreRejectedWithoutResolution(String value) {
+        // Values that look like hosts or pass the character filter but are not valid IP literals
+        // must be rejected by pure parsing: InetAddress.ofLiteral never performs a DNS lookup.
+        assertThat(ClientIpResolver.normalize(value)).isNull();
+    }
+
+    @Test
+    void ipv4MappedIpv6LiteralIsAccepted() {
+        assertThat(ClientIpResolver.normalize("::ffff:203.0.113.7")).isEqualTo("203.0.113.7");
+    }
 }
