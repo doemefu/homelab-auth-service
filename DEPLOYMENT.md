@@ -134,9 +134,10 @@ curl -s https://auth.furchert.ch/oauth2/jwks | jq
 
 ### Restart service
 ```bash
-kubectl rollout restart deployment/auth-service -n apps
-kubectl rollout status deployment/auth-service -n apps
+kubectl -n apps delete pod -l app=auth-service
+kubectl -n apps get pods -l app=auth-service   # new pod: small AGE, then READY 1/1
 ```
+Do not use `kubectl rollout restart`. Flux strips its `restartedAt` annotation on the next Kustomization apply, which can cancel the rollout before the new pod is Ready, while `rollout status` still reports success. Deleting the pod makes the ReplicaSet recreate it; with one replica, expect ~30–60 s of downtime. Verify with the pod age and the startup log, not with `rollout status` alone.
 
 ### RSA key rotation
 ```bash
@@ -144,7 +145,7 @@ openssl genrsa -out private.pem 2048
 openssl rsa -in private.pem -pubout -out public.pem
 kubectl delete secret homelab-auth-rsa-keys -n apps
 kubectl create secret generic homelab-auth-rsa-keys -n apps --from-file=private.pem --from-file=public.pem
-kubectl rollout restart deployment/auth-service -n apps
+kubectl -n apps delete pod -l app=auth-service
 rm private.pem public.pem
 ```
 **Note:** All existing tokens become invalid immediately.
@@ -219,8 +220,8 @@ kubectl rollout status deployment/auth-service -n apps
 # Logs
 kubectl logs -n apps deployment/auth-service --tail=100 -f
 
-# Restart
-kubectl rollout restart deployment/auth-service -n apps
+# Restart (not rollout restart; see Runbooks > Restart service)
+kubectl -n apps delete pod -l app=auth-service
 
 # Flux
 flux get kustomizations -n flux-system
