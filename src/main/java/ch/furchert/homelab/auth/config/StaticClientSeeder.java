@@ -29,6 +29,8 @@ import java.util.UUID;
  * no explicit write here. Device clients set {@code 'device'} via a side-write
  * in {@code DeviceClientService}.
  * <p>
+ * Clients whose secret resolves to blank are skipped (optional clients, see application.yaml).
+ * <p>
  * Secret handling: YAML values are passed through verbatim — they MUST already
  * carry a DelegatingPasswordEncoder prefix ({noop}/{bcrypt}/...) per the
  * application.yaml comment on each client. Re-encoding a {bcrypt} value would
@@ -48,6 +50,12 @@ public class StaticClientSeeder implements ApplicationRunner {
     public void run(@NonNull ApplicationArguments args) {
         int seeded = 0;
         for (OidcClientProperties.ClientDefinition def : properties.getClients()) {
+            if (def.getClientSecret() == null || def.getClientSecret().isBlank()) {
+                // Optional clients (e.g. data-service, whose secret env var defaults to empty so a
+                // missing Secret key cannot stop the IdP) are seeded on the first boot that has it.
+                log.info("SSO client '{}' has no client secret configured; not seeding it", def.getClientId());
+                continue;
+            }
             if (registeredClientRepository.findByClientId(def.getClientId()) != null) {
                 log.debug("SSO client '{}' already present in DB; skipping seed", def.getClientId());
                 continue;

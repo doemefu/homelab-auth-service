@@ -258,6 +258,81 @@ requested scopes are granted, and a client without `netmon:read` gets
 `V6__furchert_ch_client_credentials.sql`; fresh databases get them from
 `application.yaml` via the seeder.
 
+### data-service — login-event pull (`login-events:read`)
+
+auth-service keeps a transient outbox of form-login attempts that data-service pulls
+(network monitoring NM-4; contract: `../docs/060-network-monitoring.md` §7.6, §9, §10).
+auth-service makes no outbound call: data-service pulls, auth-service only exposes.
+
+**Client.** `data-service`, grant `client_credentials` only, scope `login-events:read`,
+no redirect URIs. It is seeded from `application.yaml` on the first boot where its
+secret is set; while the secret is blank the seeder skips it.
+
+```bash
+curl -s -u "data-service:${AUTH_CLIENT_SECRET}" \
+  -d 'grant_type=client_credentials&scope=login-events:read' \
+  http://auth-service.apps.svc.cluster.local:8080/oauth2/token
+```
+
+**Endpoint.** `GET /api/v1/login-events?after=<id>&limit=<n>`
+
+| Parameter | Default | Rule |
+|---|---|---|
+| `after` | `0` | id cursor, `>= 0`; returns rows with `id > after` |
+| `limit` | `500` | `1..1000`, otherwise `400` |
+
+- Requires `SCOPE_login-events:read` via method security. A user token, including one
+  with `role=ADMIN`, gets `403`; no token gets `401`.
+- Returns `503` while the feature is disabled (see Configuration below). The scope
+  check runs first, so an unscoped caller still gets `403`.
+- Rows younger than 10 s are not served yet, so ids whose transaction commits late
+  are never skipped. Pass `nextAfter` back as `after`, and fetch again at once while
+  `hasMore` is true.
+- Responses carry Spring Security's default `Cache-Control: no-cache, no-store`.
+
+```json
+{ "events": [ {"id": 1234, "eventId": "0b6f…", "occurredAt": "2026-09-23T21:00:00.123Z",
+               "outcome": "failure", "clientIp": "203.0.113.7", "ipSource": "cf-connecting-ip",
+               "usernameHmac": "<64 hex>", "subject": null, "userAgent": "…"} ],
+  "nextAfter": 1234, "hasMore": false }
+```
+
+| Field | Meaning |
+|---|---|
+| `outcome` | `success`; `locked` = the account is not `ACTIVE` (checked before the password); `failure` = anything else |
+| `clientIp`, `ipSource` | `CF-Connecting-IP` when it holds a valid IP literal (`cf-connecting-ip`), else the request's remote address (`remote-addr`). Tomcat's RemoteIpValve can already derive the remote address from `X-Forwarded-For`, so both are header-derived and spoofable in-cluster. `clientIp` is `null` when neither is a valid IP. |
+| `usernameHmac` | Lowercase hex `HMAC-SHA256(LOGIN_EVENT_HMAC_KEY, lowercase(trim(submitted username)))`. The key never leaves auth-service. |
+| `subject` | Plaintext username, set **only** for `success` |
+| `userAgent` | Truncated to 512 characters; `null` when absent |
+
+Absent values are `null`, never omitted. Only form logins on `/login` are recorded;
+bearer-token and OAuth2 client authentications are not.
+
+**Capture and retention.** The Spring Security authentication event listener captures
+the request data on the login thread and hands it to one bounded background writer.
+When its queue is full the event is dropped with a rate-limited WARN, so a login never
+fails or slows down because of telemetry. Rows are purged hourly once `recorded_at` is
+older than 72 h. Privacy: log lines never contain IPs, usernames or user agents, but
+`homelabdb` dumps and Longhorn snapshots capture up to 72 h of outbox rows.
+
+**Configuration.**
+
+| Env | Kubernetes Secret key (`homelab-auth-secrets`) | SOPS variable (owner) |
+|---|---|---|
+| `DATA_SERVICE_CLIENT_SECRET` | `data-service-client-secret`, value `{noop}<plaintext>` | `auth_service_data_service_client_secret` (data-service uses the plain value) |
+| `LOGIN_EVENT_HMAC_KEY` | `login-event-hmac-key`, at least 32 characters, e.g. `openssl rand -hex 32` | `auth_service_login_event_hmac_key` |
+
+Both env vars are **optional**, and `k8s/deployment.yaml` wires them with
+`optional: true`. auth-service is Flux-auto-deployed on merge and is the sole IdP, so a
+missing Secret key must never stop the pod. While either is missing or the key is too
+short, the app starts normally, does not seed `data-service`, records nothing, answers
+`503` on the endpoint, and logs one WARN naming the missing variable. Enabling it takes
+the SOPS variables, a playbook 59 run that creates the Secret keys, and an auth-service
+restart. Rotating the HMAC key breaks HMAC continuity with events already stored in
+data-service. Other settings live under `app.login-events.*`: `ttl` 72h, `settle` 10s,
+`queue-capacity` 1000, `default-limit` 500, `max-limit` 1000, and `purge-cron`, which
+runs hourly.
+
 ---
 
 ## 3. Service-to-Service Token Validation
@@ -347,6 +422,7 @@ The REST API uses **Bearer token authentication** with JWT tokens obtained via O
 | `GET /users/{id}` | Any authenticated | User can access own profile |
 | All other `/users` endpoints | `ADMIN` | Full CRUD access |
 | All `/clients` endpoints | `ADMIN` **or** `clients:admin` scope | IoT device client lifecycle — see §8 |
+| `GET /login-events` | `login-events:read` scope only (ADMIN gets 403) | Login-event outbox for data-service — see §2 "data-service" |
 
 ### API Summary
 

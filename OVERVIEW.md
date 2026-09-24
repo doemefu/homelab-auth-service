@@ -106,6 +106,16 @@ client lifecycle. See [INTERFACES.md §8](./INTERFACES.md) for full details.
 | GET | `/api/v1/clients/{clientId}` | ADMIN or `clients:admin` scope | Get a device client, or `404` |
 | DELETE | `/api/v1/clients/{clientId}` | ADMIN or `clients:admin` scope | Delete a device client (idempotent) |
 
+### Login-Event API (v1)
+
+**Base Path:** `/api/v1/login-events` — transient outbox of form-login attempts,
+pulled by data-service (network monitoring, `../docs/060-network-monitoring.md` §7.6).
+See [INTERFACES.md §2](./INTERFACES.md) for the payload and configuration.
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/v1/login-events?after=&limit=` | `login-events:read` scope (client `data-service`) | Page of login events by id cursor; `503` while the feature is disabled |
+
 ### Management & Documentation
 
 | Method | Path | Auth | Description |
@@ -185,6 +195,10 @@ All OIDC clients are configured in `application.yaml` under `app.oidc.clients`. 
 - `redirect-uris`: List of allowed callback URLs
 - `post-logout-redirect-uris`: Where to redirect after logout
 - `scopes`: List of OIDC scopes (typically `openid`, `profile`, `email`)
+- `grant-types` (optional): defaults to `authorization_code` + `refresh_token`
+
+A client whose secret resolves to blank is not seeded. The `data-service` client relies
+on that: its secret env var is optional.
 
 See [INTERFACES.md](./INTERFACES.md) for client integration details.
 

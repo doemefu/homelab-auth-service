@@ -133,4 +133,46 @@ class StaticClientSeederTest {
                 .extracting(org.springframework.security.oauth2.core.AuthorizationGrantType::getValue)
                 .containsExactlyInAnyOrder("authorization_code", "refresh_token", "client_credentials");
     }
+
+    @Test
+    void skipsClientWithBlankSecret() {
+        // NM-4: data-service's secret env var defaults to empty so a missing Secret key cannot
+        // stop the IdP; such a client must not be seeded (and must not even be looked up).
+        props.getClients().add(def("grafana", "{noop}gs"));
+        props.getClients().add(def("data-service", ""));
+        props.getClients().add(def("other", null));
+        when(repo.findByClientId("grafana")).thenReturn(null);
+        when(jdbcTemplate.queryForObject(any(String.class), eq(Integer.class))).thenReturn(1);
+
+        seeder.run(mock(ApplicationArguments.class));
+
+        ArgumentCaptor<RegisteredClient> captor = ArgumentCaptor.forClass(RegisteredClient.class);
+        verify(repo, times(1)).save(captor.capture());
+        assertThat(captor.getValue().getClientId()).isEqualTo("grafana");
+        verify(repo, never()).findByClientId("data-service");
+        verify(repo, never()).findByClientId("other");
+    }
+
+    @Test
+    void seedsClientCredentialsOnlyClientWithoutRedirectUris() {
+        // docs/060 §12 unverified item: a client_credentials-only client with no redirect URIs builds.
+        OidcClientProperties.ClientDefinition d = new OidcClientProperties.ClientDefinition();
+        d.setClientId("data-service");
+        d.setClientSecret("{noop}ds");
+        d.setScopes(new ArrayList<>(List.of("login-events:read")));
+        d.setGrantTypes(new ArrayList<>(List.of("client_credentials")));
+        props.getClients().add(d);
+        when(repo.findByClientId("data-service")).thenReturn(null);
+        when(jdbcTemplate.queryForObject(any(String.class), eq(Integer.class))).thenReturn(1);
+
+        seeder.run(mock(ApplicationArguments.class));
+
+        ArgumentCaptor<RegisteredClient> captor = ArgumentCaptor.forClass(RegisteredClient.class);
+        verify(repo).save(captor.capture());
+        RegisteredClient saved = captor.getValue();
+        assertThat(saved.getRedirectUris()).isEmpty();
+        assertThat(saved.getScopes()).containsExactly("login-events:read");
+        assertThat(saved.getAuthorizationGrantTypes()).extracting(g -> g.getValue())
+                .containsExactly("client_credentials");
+    }
 }
