@@ -7,9 +7,13 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.oauth2.core.AuthorizationGrantType;
+import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
+import org.springframework.security.oauth2.server.authorization.settings.ClientSettings;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -174,5 +178,86 @@ class StaticClientSeederTest {
         assertThat(saved.getScopes()).containsExactly("login-events:read");
         assertThat(saved.getAuthorizationGrantTypes()).extracting(g -> g.getValue())
                 .containsExactly("client_credentials");
+    }
+
+    @Test
+    void defaultsKeepTodaysSettings() {
+        props.getClients().add(def("grafana", "{noop}gs"));
+        when(repo.findByClientId(any())).thenReturn(null);
+        when(jdbcTemplate.queryForObject(any(String.class), eq(Integer.class))).thenReturn(1);
+
+        seeder.run(mock(ApplicationArguments.class));
+
+        ArgumentCaptor<RegisteredClient> captor = ArgumentCaptor.forClass(RegisteredClient.class);
+        verify(repo).save(captor.capture());
+        RegisteredClient saved = captor.getValue();
+        assertThat(saved.getClientAuthenticationMethods())
+                .containsExactly(ClientAuthenticationMethod.CLIENT_SECRET_BASIC);
+        assertThat(saved.getClientSettings().isRequireAuthorizationConsent()).isFalse();
+        assertThat(saved.getClientSettings().isRequireProofKey()).isTrue();
+        assertThat(saved.getTokenSettings().getAccessTokenTimeToLive()).isEqualTo(Duration.ofMinutes(15));
+        assertThat(saved.getTokenSettings().getRefreshTokenTimeToLive()).isEqualTo(Duration.ofDays(7));
+        assertThat(saved.getTokenSettings().isReuseRefreshTokens()).isTrue();
+        assertThat(saved.getClientSettings().getSettings())
+                .doesNotContainKey(OidcClientProperties.AUDIENCE_BOUND_SETTING);   // existing clients: no marker
+    }
+
+    @Test
+    void appliesPerClientSettings() {
+        OidcClientProperties.ClientDefinition d = def("claude-mcp-hub", "{noop}s");
+        d.setScopes(new ArrayList<>(List.of("mail:read", "calendar:read")));
+        d.setClientAuthenticationMethods(new ArrayList<>(List.of("client_secret_basic", "client_secret_post")));
+        d.setReuseRefreshTokens(false);
+        d.setRequireAuthorizationConsent(true);
+        d.setAccessTokenTimeToLive(Duration.ofMinutes(10));
+        d.setAccessTokenAudience("https://mcp.furchert.ch/mcp");
+        props.getClients().add(d);
+        when(repo.findByClientId(any())).thenReturn(null);
+        when(jdbcTemplate.queryForObject(any(String.class), eq(Integer.class))).thenReturn(1);
+
+        seeder.run(mock(ApplicationArguments.class));
+
+        ArgumentCaptor<RegisteredClient> captor = ArgumentCaptor.forClass(RegisteredClient.class);
+        verify(repo).save(captor.capture());
+        RegisteredClient saved = captor.getValue();
+        assertThat(saved.getClientAuthenticationMethods()).containsExactlyInAnyOrder(
+                ClientAuthenticationMethod.CLIENT_SECRET_BASIC, ClientAuthenticationMethod.CLIENT_SECRET_POST);
+        assertThat(saved.getClientSettings().isRequireAuthorizationConsent()).isTrue();
+        assertThat(saved.getTokenSettings().getAccessTokenTimeToLive()).isEqualTo(Duration.ofMinutes(10));
+        assertThat(saved.getTokenSettings().isReuseRefreshTokens()).isFalse();
+        assertThat(saved.getTokenSettings().getRefreshTokenTimeToLive()).isEqualTo(Duration.ofDays(7));
+        // Fail-closed marker for audience-bound clients: a plain Boolean in client_settings.
+        assertThat(saved.getClientSettings().<Object>getSetting(OidcClientProperties.AUDIENCE_BOUND_SETTING))
+                .isEqualTo(Boolean.TRUE);
+    }
+
+    @Test
+    void findClientMatchesExactClientId() {
+        props.getClients().add(def("grafana", "{noop}gs"));
+        assertThat(props.findClient("grafana")).isPresent();
+        assertThat(props.findClient("Grafana")).isEmpty();
+        assertThat(props.findClient(null)).isEmpty();
+    }
+
+    @Test
+    void markedClientWithoutDefinitionOrAudienceIsDetected() {
+        OidcClientProperties.ClientDefinition hub = def("claude-mcp-hub", "{noop}s");
+        hub.setAccessTokenAudience("https://mcp.furchert.ch/mcp");
+        props.getClients().add(hub);
+        RegisteredClient marked = client("claude-mcp-hub", true);
+        assertThat(props.isAudienceBoundWithoutDefinition(marked)).isFalse();      // definition present
+        hub.setAccessTokenAudience(" ");
+        assertThat(props.isAudienceBoundWithoutDefinition(marked)).isTrue();       // audience removed
+        props.getClients().clear();
+        assertThat(props.isAudienceBoundWithoutDefinition(marked)).isTrue();       // entry removed or renamed
+        assertThat(props.isAudienceBoundWithoutDefinition(client("grafana", false))).isFalse();   // unmarked: never
+    }
+
+    private static RegisteredClient client(String clientId, boolean marked) {
+        ClientSettings.Builder settings = ClientSettings.builder();
+        if (marked) settings.setting(OidcClientProperties.AUDIENCE_BOUND_SETTING, true);
+        return RegisteredClient.withId(clientId + "-id").clientId(clientId)
+                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                .redirectUri("https://client.test.local/cb").clientSettings(settings.build()).build();
     }
 }
