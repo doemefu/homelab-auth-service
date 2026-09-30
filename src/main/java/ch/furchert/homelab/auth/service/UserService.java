@@ -88,9 +88,9 @@ public class UserService {
 
     @Transactional
     public void deleteUser(Long id) {
-        if (!userRepository.existsById(id)) {
-            throw new ResourceNotFoundException("User not found: " + id);
-        }
+        User user = findById(id);
+        // Same revocation as a password reset: the deleted user's refresh tokens and consents go too.
+        revokeAuthorizations(user.getUsername());
         userRepository.deleteById(id);
     }
 

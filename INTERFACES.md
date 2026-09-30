@@ -67,7 +67,8 @@ today this is only `claude-mcp-hub`. Every other client signs in without one.
   It survives restarts. When the stored scopes cover the request, no consent page is shown;
   otherwise it appears again with the stored scopes pre-selected.
 - **Deleted when** the user denies every scope, the user's password is reset, the username
-  changes, the client is deleted, or an operator revokes it (`DEPLOYMENT.md`). There is no
+  changes, the user is deleted, the client is deleted, or an operator revokes it
+  (`DEPLOYMENT.md`). There is no
   purge job. After a deletion the consent page is shown again at the next authorization.
 - **Privacy.** Rows contain the username and the granted scopes, no secrets; they appear in
   database dumps and snapshots like `users`. Each decision writes one INFO log line with
@@ -518,6 +519,8 @@ The REST API uses **Bearer token authentication** with JWT tokens obtained via O
 | All other `/users` endpoints | `ADMIN` | Full CRUD access |
 | All `/clients` endpoints | `ADMIN` **or** `clients:admin` scope | IoT device client lifecycle — see §8 |
 | `GET /login-events` | `login-events:read` scope only (ADMIN gets 403) | Login-event outbox for data-service — see §2 "data-service" |
+
+Deleting a user revokes the user's authorizations and consents.
 
 ### API Summary
 

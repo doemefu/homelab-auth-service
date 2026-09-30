@@ -239,7 +239,7 @@ public class AuthorizationServerConfig {
     /**
      * Consent decisions are stored in oauth2_authorization_consent (Flyway V3, timestamps V8) for every
      * client that requires consent; clients with consent disabled never write rows. Revocation paths
-     * (password reset, username change, device-client deletion) delete the rows.
+     * (password reset, username change, user deletion, device-client deletion) delete the rows.
      */
     @Bean
     public OAuth2AuthorizationConsentService authorizationConsentService(

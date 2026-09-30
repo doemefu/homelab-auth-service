@@ -39,6 +39,7 @@
 
 - `StaticClientSeeder` skips clients whose secret resolves to blank. This makes optional clients such as `data-service` possible.
 - A non-numeric query parameter now returns `400` instead of `500` (`MethodArgumentTypeMismatchException` handler).
+- Deleting a user (`DELETE /api/v1/users/{id}`) also removes the user's authorizations (refresh tokens) and consents, as a password reset already does (#107).
 - `StaticClientSeeder` reads authentication methods, consent, access-token lifetime and refresh rotation from each client definition; defaults keep existing clients unchanged. Clients with `access-token-audience` are seeded with the setting `settings.client.homelab.audience-bound` and receive no codes or tokens while their configuration entry is missing.
 
 - Token storage migrated from `refresh_tokens` table to `oauth2_authorization` table (Flyway V3)
