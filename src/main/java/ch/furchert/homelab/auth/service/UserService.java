@@ -81,6 +81,11 @@ public class UserService {
                 throw new IllegalArgumentException("Invalid status: " + request.status());
             }
             user.setStatus(request.status());
+            if ("INACTIVE".equals(request.status())) {
+                // Same revocation as a deletion: a deactivated user's refresh tokens and consents go too,
+                // so no client can keep refreshing (rotating refresh tokens would otherwise never expire).
+                revokeAuthorizations(user.getUsername());
+            }
         }
 
         return UserResponse.from(userRepository.save(user));
@@ -88,9 +93,9 @@ public class UserService {
 
     @Transactional
     public void deleteUser(Long id) {
-        if (!userRepository.existsById(id)) {
-            throw new ResourceNotFoundException("User not found: " + id);
-        }
+        User user = findById(id);
+        // Same revocation as a password reset: the deleted user's refresh tokens and consents go too.
+        revokeAuthorizations(user.getUsername());
         userRepository.deleteById(id);
     }
 

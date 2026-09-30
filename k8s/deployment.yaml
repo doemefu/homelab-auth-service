@@ -98,6 +98,21 @@ spec:
                   name: homelab-auth-secrets
                   key: login-event-hmac-key # e.g. openssl rand -hex 32; never rotate casually
                   optional: true
+            # MCP hub connector client (docs/080 §4.1, #107). Optional ON PURPOSE, same reason as
+            # above: without the secret the client is not seeded; without the allowlist every
+            # authorization request for it is rejected. Read at start-up: restart after a change.
+            - name: CLAUDE_MCP_HUB_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: homelab-auth-secrets
+                  key: claude-mcp-hub-client-secret # value = {bcrypt}<cost-10 hash> via SOPS
+                  optional: true
+            - name: CLAUDE_MCP_HUB_ALLOWED_USERS
+              valueFrom:
+                secretKeyRef:
+                  name: homelab-auth-secrets
+                  key: claude-mcp-hub-allowed-users # auth-service username(s), exact spelling
+                  optional: true
           volumeMounts:
             - name: rsa-keys
               mountPath: /etc/secrets

@@ -22,7 +22,7 @@ Comprehensive deployment and operational guidance for auth-service.
 |--------|------|---------|
 | `homelab-db-credentials` | `username`, `password` | Database |
 | `homelab-auth-rsa-keys` | `private.pem`, `public.pem` | JWT signing keys |
-| `homelab-auth-secrets` | Client secrets for Grafana, Home Assistant, device-service, n8n, LiteLLM | OIDC client auth |
+| `homelab-auth-secrets` | Client secrets for Grafana, Home Assistant, device-service, n8n, LiteLLM; optional `claude-mcp-hub-client-secret`, `claude-mcp-hub-allowed-users` | OIDC client auth |
 | `sentry-dsn` | `dsn` | Error tracking (optional) |
 
 ### Cloudflare Tunnel
@@ -157,6 +157,165 @@ rm private.pem public.pem
 4. Add env var reference to `k8s/deployment.yaml`
 5. Restart service
 
+### Enable or change the claude-mcp-hub client
+
+Contract: `../docs/080-mcp-hub.md` §4.1 and §4.6; see `INTERFACES.md` §2 "claude-mcp-hub".
+Every step is an owner action or needs the owner's go. All SQL runs inside the database
+pod (no password, no local client).
+
+1. The owner sets the SOPS variables `auth_service_claude_mcp_hub_client_secret` and
+   `auth_service_claude_mcp_hub_allowed_users` (both or none) and runs playbook 59 from a
+   checkout on `main`: `ansible-playbook infra/playbooks/59_app_services.yml`.
+   - Secret format: `{bcrypt}$2y$10$` followed by 53 characters — the output of
+     `htpasswd -B -C 10` without the `user:` prefix and without a trailing newline, plus the
+     `{bcrypt}` id (`$2a$`/`$2b$` also work).
+   - Allowlist: auth-service usernames, comma-separated, exact spelling and letter case.
+2. Restart: `kubectl -n apps delete pod -l app=auth-service` (see "Restart service").
+3. Verify the start-up log:
+```bash
+kubectl -n apps logs -l app=auth-service --tail=400 --request-timeout=10s | grep -E "claude-mcp-hub"
+# expected: Seeded SSO client 'claude-mcp-hub' (first start with the secret only)
+# not expected: Client 'claude-mcp-hub' has no allowed users configured; ...
+```
+   If `Seeded SSO client 'claude-mcp-hub'` is missing on the first start with the secret and
+   the log shows `SSO client 'claude-mcp-hub' not seeded: another registered client already
+   uses this client id`, a device client holds that id and the seeder skips the hub client.
+   Check the row:
+```bash
+kubectl -n apps exec postgresql-0 -c postgresql -- psql -U postgres -d homelabdb -tAc \
+  "SELECT client_kind FROM oauth2_registered_client WHERE client_id = 'claude-mcp-hub'"
+# expected: sso
+```
+
+**Allowlist change:** change the SOPS value, run playbook 59, restart the pod. No SQL.
+
+**Login refused** (`access_denied` after a successful login): log lines never name users.
+Compare the SOPS allowlist value with the stored usernames:
+```bash
+kubectl -n apps exec postgresql-0 -c postgresql -- psql -U postgres -d homelabdb -tAc "SELECT username FROM users"
+```
+
+**Secret rotation** (spec 080 §4.6 L5): the seeder never updates an existing row, so change
+the row **and** the SOPS variable `auth_service_claude_mcp_hub_client_secret` (otherwise a
+database restore or a reseed brings the old secret back), then remove and re-add the
+connector in claude.ai. The owner inserts the new `{bcrypt}` value; it is never written to
+the repository:
+```bash
+kubectl -n apps exec -i postgresql-0 -c postgresql -- psql -U postgres -d homelabdb -v ON_ERROR_STOP=1 <<'SQL'
+UPDATE oauth2_registered_client SET client_secret = '<{bcrypt} value>' WHERE client_id = 'claude-mcp-hub';
+SQL
+# expected: UPDATE 1
+```
+
+**Revoke the authorizations and the consent** (spec 080 §4.6 L4). Consents go first, so
+the consent page is shown again at the next authorization; the next refresh gets
+`400 invalid_grant`; access tokens already issued stay valid until `exp` (at most 10
+minutes):
+```bash
+kubectl -n apps exec -i postgresql-0 -c postgresql -- psql -U postgres -d homelabdb -v ON_ERROR_STOP=1 <<'SQL'
+BEGIN;
+DELETE FROM oauth2_authorization_consent
+ WHERE registered_client_id = (SELECT id FROM oauth2_registered_client WHERE client_id = 'claude-mcp-hub');
+DELETE FROM oauth2_authorization
+ WHERE registered_client_id = (SELECT id FROM oauth2_registered_client WHERE client_id = 'claude-mcp-hub');
+COMMIT;
+SQL
+```
+The infrastructure incident runbook (`homelab` repository, `DEPLOYMENT.md`) carries the
+same SQL and the other levels of spec 080 §4.6.
+
+### Remove or rename the claude-mcp-hub client (also before reverting #107)
+
+Required before reverting #107, deploying an older auth-service image, or removing or
+renaming the `claude-mcp-hub` entry in `application.yaml` (or its
+`access-token-audience`), once the client has been seeded. A seeded row without the code
+and configuration that shape its tokens must not keep working. Spec 080 §4.6 "Disabling
+and removing the hub client" (D55); the infrastructure runbook "Disable and remove the
+`claude-mcp-hub` client" carries the same procedure.
+
+Check first (read-only):
+```bash
+kubectl -n apps exec postgresql-0 -c postgresql -- psql -U postgres -d homelabdb -tAc \
+  "SELECT count(*) FROM oauth2_registered_client WHERE client_id = 'claude-mcp-hub'"
+```
+`0` means the client was never seeded: no step below is needed. Otherwise, in this order.
+Every step needs the owner's go.
+
+1. Hub kill switch (spec 080 §4.6 L2 step 1):
+```bash
+kubectl -n apps patch secret mcp-hub-secrets --type merge -p '{"stringData":{"allowed-subjects":""}}'
+kubectl -n apps delete pod -l app=mcp-hub
+```
+2. Remove **both** SOPS variables `auth_service_claude_mcp_hub_client_secret` and
+   `auth_service_claude_mcp_hub_allowed_users` (with only one of them the play fails), then
+   run playbook 59 from a checkout on `main`:
+   `ansible-playbook infra/playbooks/59_app_services.yml` — expect the message "skipping
+   the claude-mcp-hub keys in homelab-auth-secrets".
+3. Remove each key with its own JSON patch, only if it still exists (the playbook leaves
+   existing keys in place), then list the key names only:
+```bash
+# jq exit 0 = key present, 1 = already gone, anything else = the Secret could not be read.
+for k in claude-mcp-hub-client-secret claude-mcp-hub-allowed-users; do
+  kubectl -n apps get secret homelab-auth-secrets --request-timeout=10s -o json | jq -e --arg k "$k" '.data[$k]' >/dev/null
+  case $? in
+    0) kubectl -n apps patch secret homelab-auth-secrets --type json -p "[{\"op\":\"remove\",\"path\":\"/data/$k\"}]" ;;
+    1) echo "$k is already gone - skipped" ;;
+    *) echo "could not read homelab-auth-secrets - stop and check cluster access before going on"; break ;;
+  esac
+done
+kubectl -n apps get secret homelab-auth-secrets --request-timeout=10s -o json | jq '.data | keys'
+# expect: neither claude-mcp-hub-client-secret nor claude-mcp-hub-allowed-users in the list
+```
+   Off-LAN (one-shot kubectl over SSH, see the infrastructure `DEPLOYMENT.md`):
+```bash
+for k in claude-mcp-hub-client-secret claude-mcp-hub-allowed-users; do
+  ssh -i ~/.ssh/homelab -o IdentitiesOnly=yes -o ProxyCommand="cloudflared access ssh --hostname %h" ansible@ssh.furchert.ch \
+    'sudo k3s kubectl -n apps get secret homelab-auth-secrets -o json' | jq -e --arg k "$k" '.data[$k]' >/dev/null
+  case $? in
+    0) ssh -i ~/.ssh/homelab -o IdentitiesOnly=yes -o ProxyCommand="cloudflared access ssh --hostname %h" ansible@ssh.furchert.ch \
+         "sudo k3s kubectl -n apps patch secret homelab-auth-secrets --type json -p '[{\"op\":\"remove\",\"path\":\"/data/$k\"}]'" ;;
+    1) echo "$k is already gone - skipped" ;;
+    *) echo "could not read homelab-auth-secrets - stop and check the SSH access before going on"; break ;;
+  esac
+done
+ssh -i ~/.ssh/homelab -o IdentitiesOnly=yes -o ProxyCommand="cloudflared access ssh --hostname %h" ansible@ssh.furchert.ch \
+  'sudo k3s kubectl -n apps get secret homelab-auth-secrets -o json' | jq '.data | keys'
+```
+   From now on every start of auth-service sees a blank secret and cannot seed the client
+   again, whatever image runs.
+4. Remove the client with its consents and authorizations, in one transaction, the client
+   row last (loading a consent fails for a missing client):
+```bash
+kubectl -n apps exec -i postgresql-0 -c postgresql -- psql -U postgres -d homelabdb -v ON_ERROR_STOP=1 <<'SQL'
+BEGIN;
+DELETE FROM oauth2_authorization_consent
+ WHERE registered_client_id = (SELECT id FROM oauth2_registered_client WHERE client_id = 'claude-mcp-hub');
+DELETE FROM oauth2_authorization
+ WHERE registered_client_id = (SELECT id FROM oauth2_registered_client WHERE client_id = 'claude-mcp-hub');
+DELETE FROM oauth2_registered_client
+ WHERE client_id = 'claude-mcp-hub';
+COMMIT;
+SQL
+# expect BEGIN, three DELETE lines (the last one DELETE 1), COMMIT
+```
+5. Verify the row is gone:
+```bash
+kubectl -n apps exec postgresql-0 -c postgresql -- psql -U postgres -d homelabdb -tAc \
+  "SELECT count(*) FROM oauth2_registered_client WHERE client_id = 'claude-mcp-hub'"
+# expect 0
+```
+6. Only then merge the revert, deploy an older image or change the configuration entry.
+   A revert of #107 keeps `src/main/resources/db/migration/V8__oauth2_authorization_consent_timestamps.sql`:
+   the migration is additive, and an older image starts on the migrated schema.
+
+Why this order: the kill switch stops the hub while the identity-provider side is taken
+apart; the Secret keys go before the SQL because a pod restart with the secret still
+present would seed the client again. Access tokens issued before step 4 stay valid until
+`exp` (at most 10 minutes), but the hub refuses them after step 1.
+
+**Removing any other client row by hand:** delete its consents and authorizations first,
+then the row, as in step 4.
+
 ---
 
 ## Troubleshooting
@@ -206,6 +365,8 @@ Common: Insufficient CPU/memory, nodeSelector mismatch, image not available for 
 | `DEVICE_SERVICE_CLIENT_SECRET` | `homelab-auth-secrets` | Yes | device-service OIDC client secret |
 | `N8N_CLIENT_SECRET` | `homelab-auth-secrets` | Yes | n8n OIDC client secret |
 | `LITELLM_CLIENT_SECRET` | `homelab-auth-secrets` | Yes | LiteLLM OIDC client secret |
+| `CLAUDE_MCP_HUB_CLIENT_SECRET` | `homelab-auth-secrets` (`claude-mcp-hub-client-secret`) | No | `claude-mcp-hub` client secret, `{bcrypt}` cost 10; blank = client not seeded |
+| `CLAUDE_MCP_HUB_ALLOWED_USERS` | `homelab-auth-secrets` (`claude-mcp-hub-allowed-users`) | No | Usernames allowed to use `claude-mcp-hub`, comma-separated, exact spelling; empty = everyone rejected |
 | `SENTRY_DSN` | `sentry-dsn` | No | Sentry error tracking |
 
 ---

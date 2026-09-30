@@ -2,6 +2,7 @@ package ch.furchert.homelab.auth;
 
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -89,5 +90,30 @@ public abstract class AbstractIntegrationTest {
         registry.add("app.oidc.clients[5].grant-types[0]", () -> "authorization_code");
         registry.add("app.oidc.clients[5].grant-types[1]", () -> "refresh_token");
         registry.add("app.oidc.clients[5].grant-types[2]", () -> "client_credentials");
+
+        // clients[6]: claude-mcp-hub — mirrors application.yaml (docs/080 §4.1, #107). The secret is a
+        // throwaway value hashed here in the production format ({bcrypt}$2y$10$…, as htpasswd produces),
+        // so every hub token request in the gate tests also proves that format is accepted.
+        registry.add("app.oidc.clients[6].client-id", () -> "claude-mcp-hub");
+        registry.add("app.oidc.clients[6].client-secret", () -> HUB_SECRET_HASH);
+        registry.add("app.oidc.clients[6].redirect-uris[0]", () -> "https://claude.ai/api/mcp/auth_callback");
+        registry.add("app.oidc.clients[6].redirect-uris[1]", () -> "https://claude.com/api/mcp/auth_callback");
+        registry.add("app.oidc.clients[6].scopes[0]", () -> "mail:read");
+        registry.add("app.oidc.clients[6].scopes[1]", () -> "calendar:read");
+        registry.add("app.oidc.clients[6].grant-types[0]", () -> "authorization_code");
+        registry.add("app.oidc.clients[6].grant-types[1]", () -> "refresh_token");
+        registry.add("app.oidc.clients[6].client-authentication-methods[0]", () -> "client_secret_basic");
+        registry.add("app.oidc.clients[6].client-authentication-methods[1]", () -> "client_secret_post");
+        registry.add("app.oidc.clients[6].reuse-refresh-tokens", () -> "false");
+        registry.add("app.oidc.clients[6].require-authorization-consent", () -> "true");
+        registry.add("app.oidc.clients[6].access-token-time-to-live", () -> "10m");
+        registry.add("app.oidc.clients[6].access-token-audience", () -> "https://mcp.furchert.ch/mcp");
+        registry.add("app.oidc.clients[6].allowed-resources[0]", () -> "https://mcp.furchert.ch/mcp");
+        registry.add("app.oidc.clients[6].restrict-to-allowed-users", () -> "true");
+        registry.add("app.oidc.clients[6].allowed-users", () -> "hubowner, hubadmin");
     }
+
+    // Throwaway test secret "hub-secret"; cost 10 and revision $2y$ like the production value.
+    static final String HUB_SECRET_HASH = "{bcrypt}" + new BCryptPasswordEncoder(
+            BCryptPasswordEncoder.BCryptVersion.$2Y, 10).encode("hub-secret");
 }

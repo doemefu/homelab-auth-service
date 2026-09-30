@@ -30,11 +30,18 @@
 - `GET /api/v1/login-events?after&limit`: id-cursor pull endpoint for data-service, gated by `@PreAuthorize("hasAuthority('SCOPE_login-events:read')")`
 - `data-service` registered client (`client_credentials`, scope `login-events:read`, no redirect URIs)
 - Optional env vars `DATA_SERVICE_CLIENT_SECRET` and `LOGIN_EVENT_HMAC_KEY` (Secret `homelab-auth-secrets` keys `data-service-client-secret` and `login-event-hmac-key`, both `optional: true`). While either is absent, the feature is off with one startup WARN and the endpoint answers `503`.
+- `claude-mcp-hub` client for the claude.ai MCP hub connector (#107, homelab#168, `docs/080-mcp-hub.md` §4): `authorization_code` + `refresh_token`, `client_secret_post` and `client_secret_basic`, PKCE, scopes `mail:read` and `calendar:read`, consent page, 10-minute access tokens, rotating refresh tokens. Its access tokens carry header `typ: at+jwt`, `aud` = `https://mcp.furchert.ch/mcp`, a `client_id` claim and no `role`; no ID token. A `resource` value other than the hub URL gets `invalid_target`. Only usernames on the client's allowlist get a code (exact, case-sensitive; empty list rejects everyone).
+- Per-client keys in `app.oidc.clients[]`: `client-authentication-methods`, `reuse-refresh-tokens`, `require-authorization-consent`, `access-token-time-to-live`, `access-token-audience`, `allowed-resources`, `restrict-to-allowed-users`, `allowed-users`. Defaults keep every existing client unchanged.
+- Optional env vars `CLAUDE_MCP_HUB_CLIENT_SECRET` and `CLAUDE_MCP_HUB_ALLOWED_USERS` (Secret `homelab-auth-secrets` keys `claude-mcp-hub-client-secret` and `claude-mcp-hub-allowed-users`, both `optional: true`). Without the secret the client is not seeded; without the allowlist every authorization request for it is rejected, with one startup WARN.
+- Consent decisions are stored in `oauth2_authorization_consent` (previously kept in memory) for every client that requires consent; Flyway V8 adds `created_at`/`updated_at`; one audit log line per decision (client id, scopes; no username).
 
 ### Changed
 
 - `StaticClientSeeder` skips clients whose secret resolves to blank. This makes optional clients such as `data-service` possible.
 - A non-numeric query parameter now returns `400` instead of `500` (`MethodArgumentTypeMismatchException` handler).
+- Setting a user's status to `INACTIVE` (`PUT /api/v1/users/{id}`) removes the user's authorizations (refresh tokens) and consents; reactivating the user restores nothing, a new sign-in is needed (#107).
+- Deleting a user (`DELETE /api/v1/users/{id}`) also removes the user's authorizations (refresh tokens) and consents, as a password reset already does (#107).
+- `StaticClientSeeder` reads authentication methods, consent, access-token lifetime and refresh rotation from each client definition; defaults keep existing clients unchanged. Clients with `access-token-audience` are seeded with the setting `settings.client.homelab.audience-bound` and receive no codes or tokens while their configuration entry is missing.
 
 - Token storage migrated from `refresh_tokens` table to `oauth2_authorization` table (Flyway V3)
 - `TokenCleanupScheduler` now purges expired `oauth2_authorization` records (was: `refresh_tokens`)

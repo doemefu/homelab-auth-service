@@ -7,6 +7,8 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.util.Map;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 class FlywayMigrationTest extends AbstractIntegrationTest {
@@ -37,5 +39,18 @@ class FlywayMigrationTest extends AbstractIntegrationTest {
                         "WHERE table_schema = 'public' AND table_name = 'oauth2_registered_client' " +
                         "AND column_name = 'client_kind'", String.class);
         assertThat(columnDefault).contains("sso");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"created_at", "updated_at"})
+    void consentTableHasTimestampColumnsWithDefaults(String column) {
+        // V8 (#107): consent decisions are traceable.
+        Map<String, Object> c = jdbcTemplate.queryForMap(
+                "SELECT data_type, is_nullable, column_default FROM information_schema.columns "
+                        + "WHERE table_schema = 'public' AND table_name = 'oauth2_authorization_consent' AND column_name = ?",
+                column);
+        assertThat(c.get("data_type")).isEqualTo("timestamp with time zone");
+        assertThat(c.get("is_nullable")).isEqualTo("NO");
+        assertThat((String) c.get("column_default")).contains("now()");
     }
 }

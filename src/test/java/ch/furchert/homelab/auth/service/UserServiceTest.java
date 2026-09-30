@@ -11,6 +11,7 @@ import ch.furchert.homelab.auth.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -24,7 +25,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -155,8 +158,37 @@ class UserServiceTest {
     }
 
     @Test
+    void updateUser_settingInactiveRevokesAuthorizationsAndConsents() {
+        UpdateUserRequest request = new UpdateUserRequest(null, null, null, "INACTIVE");
+        when(userRepository.findById(1L)).thenReturn(Optional.of(existingUser));
+        when(userRepository.save(any(User.class))).thenReturn(existingUser);
+
+        userService.updateUser(1L, request);
+
+        assertThat(existingUser.getStatus()).isEqualTo("INACTIVE");
+        verify(jdbcTemplate).update("DELETE FROM oauth2_authorization WHERE principal_name = ?", "testuser");
+        verify(jdbcTemplate).update("DELETE FROM oauth2_authorization_consent WHERE principal_name = ?", "testuser");
+    }
+
+    @Test
+    void updateUser_settingActiveRevokesNothing() {
+        existingUser.setStatus("INACTIVE");
+        UpdateUserRequest request = new UpdateUserRequest(null, null, null, "ACTIVE");
+        when(userRepository.findById(1L)).thenReturn(Optional.of(existingUser));
+        when(userRepository.save(any(User.class))).thenReturn(existingUser);
+
+        userService.updateUser(1L, request);
+
+        assertThat(existingUser.getStatus()).isEqualTo("ACTIVE");
+        verifyNoInteractions(jdbcTemplate);
+    }
+
+    @Test
     void deleteUser_whenExists_deletesSuccessfully() {
-        when(userRepository.existsById(1L)).thenReturn(true);
+        User user = new User();
+        user.setId(1L);
+        user.setUsername("testuser");
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
 
         userService.deleteUser(1L);
 
@@ -164,8 +196,23 @@ class UserServiceTest {
     }
 
     @Test
+    void deleteUserRevokesAuthorizationsAndConsentsBeforeDeleting() {
+        User user = new User();
+        user.setId(7L);
+        user.setUsername("testuser");
+        when(userRepository.findById(7L)).thenReturn(Optional.of(user));
+
+        userService.deleteUser(7L);
+
+        InOrder order = inOrder(jdbcTemplate, userRepository);
+        order.verify(jdbcTemplate).update("DELETE FROM oauth2_authorization WHERE principal_name = ?", "testuser");
+        order.verify(jdbcTemplate).update("DELETE FROM oauth2_authorization_consent WHERE principal_name = ?", "testuser");
+        order.verify(userRepository).deleteById(7L);
+    }
+
+    @Test
     void deleteUser_whenNotFound_throwsResourceNotFound() {
-        when(userRepository.existsById(99L)).thenReturn(false);
+        when(userRepository.findById(99L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> userService.deleteUser(99L))
                 .isInstanceOf(ResourceNotFoundException.class);

@@ -57,7 +57,17 @@ public class StaticClientSeeder implements ApplicationRunner {
                 continue;
             }
             if (registeredClientRepository.findByClientId(def.getClientId()) != null) {
-                log.debug("SSO client '{}' already present in DB; skipping seed", def.getClientId());
+                String kind = jdbcTemplate.queryForObject(
+                        "SELECT client_kind FROM oauth2_registered_client WHERE client_id = ?",
+                        String.class, def.getClientId());
+                if (kind != null && !"sso".equals(kind)) {
+                    // Another kind of client (e.g. a device client) holds this id: the configured client
+                    // is never seeded until that row is removed.
+                    log.warn("SSO client '{}' not seeded: another registered client already uses this client id",
+                            def.getClientId());
+                } else {
+                    log.debug("SSO client '{}' already present in DB; skipping seed", def.getClientId());
+                }
                 continue;
             }
             RegisteredClient client = buildRegisteredClient(def);
@@ -84,17 +94,18 @@ public class StaticClientSeeder implements ApplicationRunner {
                         def.getClientId().getBytes(StandardCharsets.UTF_8)).toString())
                 .clientId(def.getClientId())
                 .clientSecret(def.getClientSecret())
-                .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+                .clientAuthenticationMethods(methods -> def.getClientAuthenticationMethods()
+                        .forEach(m -> methods.add(new ClientAuthenticationMethod(m))))
                 .scopes(scopes -> scopes.addAll(def.getScopes()))
                 .redirectUris(uris -> uris.addAll(def.getRedirectUris()))
-                .clientSettings(ClientSettings.builder()
-                        .requireAuthorizationConsent(false)
-                        .requireProofKey(true)
-                        .build())
+                .clientSettings(clientSettings(def))
                 .tokenSettings(TokenSettings.builder()
-                        .accessTokenTimeToLive(Duration.ofMillis(rsaKeyProperties.getAccessTokenExpiry()))
+                        .accessTokenTimeToLive(def.getAccessTokenTimeToLive() != null
+                                ? def.getAccessTokenTimeToLive()
+                                : Duration.ofMillis(rsaKeyProperties.getAccessTokenExpiry()))
                         .refreshTokenTimeToLive(Duration.ofMillis(rsaKeyProperties.getRefreshTokenExpiry()))
                         .authorizationCodeTimeToLive(Duration.ofMinutes(5))
+                        .reuseRefreshTokens(def.isReuseRefreshTokens())
                         .build());
 
         for (String grant : def.getGrantTypes()) {
@@ -102,5 +113,17 @@ public class StaticClientSeeder implements ApplicationRunner {
         }
         def.getPostLogoutRedirectUris().forEach(builder::postLogoutRedirectUri);
         return builder.build();
+    }
+
+    private static ClientSettings clientSettings(OidcClientProperties.ClientDefinition def) {
+        ClientSettings.Builder settings = ClientSettings.builder()
+                .requireAuthorizationConsent(def.isRequireAuthorizationConsent())
+                .requireProofKey(true);
+        if (def.getAccessTokenAudience() != null && !def.getAccessTokenAudience().isBlank()) {
+            // Marks the row: if the definition later disappears, the policies refuse this client
+            // instead of issuing default-shaped tokens (OidcClientProperties#isAudienceBoundWithoutDefinition).
+            settings.setting(OidcClientProperties.AUDIENCE_BOUND_SETTING, true);
+        }
+        return settings.build();
     }
 }

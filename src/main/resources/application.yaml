@@ -102,6 +102,27 @@ app:
         client-secret: "${DATA_SERVICE_CLIENT_SECRET:}"
         scopes: [ "login-events:read" ]
         grant-types: [ client_credentials ]
+      - client-id: claude-mcp-hub
+        # claude.ai custom connector for the MCP hub (docs/080 §4.1, ADR 0003, #107). OPTIONAL: the
+        # empty default keeps the IdP starting without the Secret key; a blank secret means the
+        # seeder skips this client. When set: {bcrypt} value, cost 10, created by the owner.
+        client-secret: "${CLAUDE_MCP_HUB_CLIENT_SECRET:}"
+        redirect-uris:
+          - https://claude.ai/api/mcp/auth_callback
+          - https://claude.com/api/mcp/auth_callback
+        scopes: [ "mail:read", "calendar:read" ]
+        grant-types: [ authorization_code, refresh_token ]
+        client-authentication-methods: [ client_secret_basic, client_secret_post ]
+        reuse-refresh-tokens: false
+        require-authorization-consent: true
+        access-token-time-to-live: 10m
+        # Tokens are for the hub only (typ at+jwt, this audience, client_id claim, no role).
+        access-token-audience: https://mcp.furchert.ch/mcp
+        allowed-resources: [ https://mcp.furchert.ch/mcp ]
+        # Fail-closed owner-only check: exact, case-sensitive usernames, comma-separated.
+        # Empty or unset = every authorization request for this client is rejected.
+        restrict-to-allowed-users: true
+        allowed-users: "${CLAUDE_MCP_HUB_ALLOWED_USERS:}"
 
   # Login-event outbox (NM-4, docs/060 §7.6). Disabled unless LOGIN_EVENT_HMAC_KEY (>= 32 chars)
   # and DATA_SERVICE_CLIENT_SECRET are both set. Other settings default in LoginEventProperties.
