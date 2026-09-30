@@ -57,6 +57,22 @@ All OIDC clients should use the following configuration:
 }
 ```
 
+### Consent
+
+Clients with `require-authorization-consent: true` show a consent page after login;
+today this is only `claude-mcp-hub`. Every other client signs in without one.
+
+- **Storage.** The decision is stored in `oauth2_authorization_consent`: client, username,
+  granted scopes, `created_at` (first grant) and `updated_at` (latest decision; Flyway V8).
+  It survives restarts. When the stored scopes cover the request, no consent page is shown;
+  otherwise it appears again with the stored scopes pre-selected.
+- **Deleted when** the user denies every scope, the user's password is reset, the username
+  changes, the client is deleted, or an operator revokes it (`DEPLOYMENT.md`). There is no
+  purge job. After a deletion the consent page is shown again at the next authorization.
+- **Privacy.** Rows contain the username and the granted scopes, no secrets; they appear in
+  database dumps and snapshots like `users`. Each decision writes one INFO log line with
+  the client id, the scopes and the action, never the username.
+
 ### ID Token Claims
 
 Standard OIDC claims plus custom claims:
@@ -333,6 +349,85 @@ data-service. Other settings live under `app.login-events.*`: `ttl` 72h, `settle
 `queue-capacity` 1000, `default-limit` 500, `max-limit` 1000, and `purge-cron`, which
 runs hourly.
 
+### claude-mcp-hub — MCP hub connector (audience-bound tokens)
+
+The claude.ai custom connector for the MCP hub signs in through this client. Its tokens
+are for the hub only. Contract: `../docs/080-mcp-hub.md` §4 and ADR
+`../docs/adr/0003-mcp-hub-authorization.md`; issue `#107`, Epic `doemefu/homelab#168`.
+
+**Registration.**
+
+| Setting | Value |
+|---|---|
+| Client id / type | `claude-mcp-hub`, confidential |
+| Grants | `authorization_code`, `refresh_token` (no `client_credentials`) |
+| Redirect URIs | `https://claude.ai/api/mcp/auth_callback`, `https://claude.com/api/mcp/auth_callback`; no post-logout redirect URIs |
+| Client authentication | `client_secret_post` and `client_secret_basic` |
+| PKCE | required, `S256` |
+| Scopes | `mail:read`, `calendar:read` only (`openid` is refused with `invalid_scope`) |
+| Consent | required: the consent page lists both scopes; the decision is stored (§1 "Consent") |
+| Owner-only rule | Only usernames in `CLAUDE_MCP_HUB_ALLOWED_USERS` get a code. Exact, case-sensitive match with the stored username (the token's `sub`); blank entries are ignored; empty or unset rejects everyone (fail closed). Checked on authorization requests only, before the consent page; refresh is not affected. A rejected request ends with an `access_denied` error redirect |
+| Access-token lifetime | 10 minutes |
+| Refresh token | 7 days, rotated on every refresh (sliding); a superseded refresh token gets `invalid_grant` |
+
+**Token shape.**
+
+| Part | Value |
+|---|---|
+| Header `typ` | `at+jwt` |
+| `aud` | exactly `https://mcp.furchert.ch/mcp` (a single audience is serialised as a string) |
+| `client_id` | `claude-mcp-hub` |
+| `scope` | the granted scopes (`mail:read`, `calendar:read`) |
+| `role`, `device_id` | never present |
+| ID token | none is issued |
+
+**`resource` parameter (RFC 8707).** Allowed value: `https://mcp.furchert.ch/mcp`, exact
+match. A different value (including a trailing-slash variant) or several values of which
+one is not allowed: `400 invalid_target` on code exchange and refresh, an
+`invalid_target` error redirect on `/oauth2/authorize`. An absent `resource` is fine. The
+audience comes from configuration; the received value is never copied into the token. A
+rejected value is logged at WARN (control characters replaced, truncated to 200
+characters).
+
+Tokens of this client are intended for the MCP hub only. Token validation hardening
+across services: see `#101` and `doemefu/homelab-device-service#81`.
+
+**Configuration drift.** The registered-client row of `claude-mcp-hub` carries the client
+setting `settings.client.homelab.audience-bound`. While this setting is present, the
+identity provider issues codes and tokens for the client only if its `app.oidc.clients[]`
+entry with `access-token-audience` is configured; otherwise authorization requests end
+with `access_denied` and token requests with `unauthorized_client`. Remove the client as
+described in `DEPLOYMENT.md` ("Remove or rename the claude-mcp-hub client") before
+removing or renaming its entry.
+
+**Configuration.**
+
+| Env | Kubernetes Secret key (`homelab-auth-secrets`) | SOPS variable (owner) |
+|---|---|---|
+| `CLAUDE_MCP_HUB_CLIENT_SECRET` | `claude-mcp-hub-client-secret`, value `{bcrypt}` hash with cost 10 | `auth_service_claude_mcp_hub_client_secret` |
+| `CLAUDE_MCP_HUB_ALLOWED_USERS` | `claude-mcp-hub-allowed-users`, comma-separated usernames, exact spelling | `auth_service_claude_mcp_hub_allowed_users` |
+
+Both env vars are **optional** (`optional: true` in `k8s/deployment.yaml`) and read at
+start-up. While the secret is blank the seeder skips the client; while the allowlist is
+empty every authorization request for it is rejected and one WARN is logged at start-up.
+The seeder only creates the row on the first start with a secret; later changes to the
+row (secret rotation, settings) need SQL or a Flyway migration. Allowlist changes need
+only the Secret and a pod restart.
+
+**Per-client keys in `app.oidc.clients[]`.** Every client can use these keys; the
+defaults keep the behaviour of all other clients unchanged.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `client-authentication-methods` | `[client_secret_basic]` | Token-endpoint client authentication methods |
+| `reuse-refresh-tokens` | `true` | `false` rotates the refresh token on every refresh |
+| `require-authorization-consent` | `false` | Show the consent page before issuing a code |
+| `access-token-time-to-live` | `app.jwt.access-token-expiry` (15 min) | Access-token lifetime, e.g. `10m` |
+| `access-token-audience` | none | Audience-bound tokens: `typ: at+jwt`, `aud` = this value, a `client_id` claim, no `role`. Also marks the seeded row with `settings.client.homelab.audience-bound` |
+| `allowed-resources` | `[]` | Allowed `resource` values; empty = the parameter is ignored |
+| `restrict-to-allowed-users` | `false` | Only `allowed-users` may obtain a code |
+| `allowed-users` | `[]` | Exact, case-sensitive usernames (a comma-separated env value binds to the list) |
+
 ---
 
 ## 3. Service-to-Service Token Validation
@@ -515,6 +610,10 @@ app:
         scopes: [openid, profile, email]
 ```
 
+Optional per-client keys (authentication methods, consent, token lifetime, refresh
+rotation, audience-bound tokens, allowed `resource` values, user allowlist) are listed in
+§2 "claude-mcp-hub"; their defaults keep today's behaviour.
+
 ### Step 4: Reference Secret in Deployment
 
 Add to `k8s/deployment.yaml`:
@@ -666,13 +765,13 @@ as the MQTT username for ACL evaluation, and validates the signature via
 
 1. **Single-Pod Limitation:** auth-service runs as a single pod (replicas: 1) because Spring Authorization Server stores sessions in memory. Scaling to multiple replicas requires adding Spring Session with Redis/PostgreSQL backend.
 
-2. **Token Expiry:** Access tokens expire after 15 minutes, refresh tokens after 7 days. Clients must implement token refresh logic.
+2. **Token Expiry:** Access tokens expire after 15 minutes, refresh tokens after 7 days. Clients must implement token refresh logic. Per-client lifetimes can differ (`claude-mcp-hub`: 10 minutes, rotating refresh tokens).
 
 3. **Session Management:** The OIDC login flow uses cookie-based sessions. The User CRUD API uses stateless JWT tokens.
 
 4. **Key Rotation:** When RSA keys are rotated, all existing tokens become invalid immediately. Downstream services must fetch the new JWKS.
 
-5. **No Rate Limiting:** Currently, there is no rate limiting on any endpoints. Consider adding if exposed to untrusted networks.
+5. **No Rate Limiting:** Currently, there is no rate limiting on any endpoints. Consider adding if exposed to untrusted networks (see `#104`).
 
 6. **Device Token Revocation:** Deleting a device client (or its outstanding authorizations) stops *new* tokens from being issued, but JWTs already held by a device stay valid at Mosquitto until their `exp` (1-hour TTL). Immediate revocation of outstanding device tokens requires signing-key rotation.
 
