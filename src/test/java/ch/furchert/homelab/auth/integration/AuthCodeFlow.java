@@ -3,9 +3,16 @@ package ch.furchert.homelab.auth.integration;
 import ch.furchert.homelab.auth.entity.Role;
 import ch.furchert.homelab.auth.entity.User;
 import ch.furchert.homelab.auth.repository.UserRepository;
+import com.nimbusds.jose.jwk.source.JWKSource;
+import com.nimbusds.jose.proc.SecurityContext;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
+import org.springframework.security.oauth2.jwt.JwsHeader;
+import org.springframework.security.oauth2.jwt.JwtClaimsSet;
+import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
+import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
@@ -18,7 +25,9 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
+import java.time.Instant;
 import java.util.Base64;
+import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -55,14 +64,28 @@ final class AuthCodeFlow {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JdbcTemplate jdbcTemplate;
+    private final JWKSource<SecurityContext> jwkSource;
 
     AuthCodeFlow(MockMvc mockMvc, ObjectMapper objectMapper, UserRepository userRepository,
-                 PasswordEncoder passwordEncoder, JdbcTemplate jdbcTemplate) {
+                 PasswordEncoder passwordEncoder, JdbcTemplate jdbcTemplate, JWKSource<SecurityContext> jwkSource) {
         this.mockMvc = mockMvc;
         this.objectMapper = objectMapper;
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jdbcTemplate = jdbcTemplate;
+        this.jwkSource = jwkSource;
+    }
+
+    /** Same claims, re-signed with the service's real key and the given typ header (G2 positive control). */
+    String resign(String jwt, String typ) {
+        Map<String, Object> claims = payload(jwt);
+        JwtClaimsSet.Builder b = JwtClaimsSet.builder();
+        claims.forEach((k, v) -> b.claim(k, switch (k) {
+            case "iat", "exp", "nbf" -> Instant.ofEpochSecond(((Number) v).longValue());
+            default -> v;
+        }));
+        JwsHeader header = JwsHeader.with(SignatureAlgorithm.RS256).keyId("auth-service-v1").type(typ).build();
+        return new NimbusJwtEncoder(jwkSource).encode(JwtEncoderParameters.from(header, b.build())).getTokenValue();
     }
 
     MvcResult authorizeAnonymous(Req r, Pkce p) throws Exception {
@@ -201,6 +224,19 @@ final class AuthCodeFlow {
 
     static Map<String, Object> payload(String jwt) {
         return decodePart(jwt, 1);
+    }
+
+    /**
+     * The aud claim as a list: a single audience is serialised as a plain string, several as an array
+     * (RFC 7519 §4.1.3; docs/080 §4.2 accepts both for the hub).
+     */
+    @SuppressWarnings("unchecked")
+    static List<String> audiences(Map<String, Object> claims) {
+        Object aud = claims.get("aud");
+        if (aud instanceof String s) {
+            return List.of(s);
+        }
+        return aud == null ? List.of() : (List<String>) aud;
     }
 
     @SuppressWarnings("unchecked")

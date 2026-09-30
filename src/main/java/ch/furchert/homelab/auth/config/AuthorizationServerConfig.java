@@ -1,6 +1,9 @@
 package ch.furchert.homelab.auth.config;
 
+import ch.furchert.homelab.auth.security.ClientAuthorizationRequestValidator;
 import ch.furchert.homelab.auth.security.OidcUserInfoMapper;
+import ch.furchert.homelab.auth.security.ResourceIndicatorPolicy;
+import ch.furchert.homelab.auth.security.ResourceIndicatorTokenRequestGuard;
 import ch.furchert.homelab.auth.security.RsaKeyProvider;
 import ch.furchert.homelab.auth.service.ClientKindLookup;
 import com.nimbusds.jose.jwk.JWKSet;
@@ -28,6 +31,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
+import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtException;
@@ -35,6 +39,8 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationService;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService;
 import org.springframework.security.oauth2.server.authorization.OAuth2TokenType;
+import org.springframework.security.oauth2.server.authorization.authentication.OAuth2AuthorizationCodeRequestAuthenticationProvider;
+import org.springframework.security.oauth2.server.authorization.authentication.OAuth2AuthorizationCodeRequestAuthenticationValidator;
 import org.springframework.security.oauth2.server.authorization.client.JdbcRegisteredClientRepository;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.security.oauth2.server.authorization.settings.AuthorizationServerSettings;
@@ -48,6 +54,8 @@ import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
 
 import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
+import java.util.ArrayList;
+import java.util.List;
 
 @Configuration
 @EnableConfigurationProperties(OidcClientProperties.class)
@@ -60,6 +68,8 @@ public class AuthorizationServerConfig {
     private final OidcClientProperties oidcClientProperties;
     private final RsaKeyProvider rsaKeyProvider;
     private final OidcUserInfoMapper userInfoMapper;
+    private final ClientAuthorizationRequestValidator authorizationRequestValidator;
+    private final ResourceIndicatorPolicy resourceIndicatorPolicy;
 
     /**
      * Chain 1 (AS endpoints): handles OAuth2/OIDC protocol endpoints.
@@ -73,6 +83,20 @@ public class AuthorizationServerConfig {
         http
                 .securityMatcher("/oauth2/**", "/.well-known/**", "/userinfo", "/connect/**")
                 .oauth2AuthorizationServer(as -> as
+                        .authorizationEndpoint(authorization -> authorization.authenticationProviders(providers ->
+                                providers.forEach(provider -> {
+                                    if (provider instanceof OAuth2AuthorizationCodeRequestAuthenticationProvider codeRequest) {
+                                        // Keep SAS's redirect_uri + scope validation first; per-client rules run after it.
+                                        codeRequest.setAuthenticationValidator(
+                                                new OAuth2AuthorizationCodeRequestAuthenticationValidator()
+                                                        .andThen(authorizationRequestValidator));
+                                    }
+                                })))
+                        // Constructed here, never a bean: an AuthenticationConverter bean would replace the
+                        // bearer-token converter of every resource-server chain (see the guard's Javadoc).
+                        .tokenEndpoint(token -> token.accessTokenRequestConverters(converters ->
+                                converters.addFirst(new ResourceIndicatorTokenRequestGuard(
+                                        oidcClientProperties, resourceIndicatorPolicy))))
                         .oidc(oidc -> oidc
                                 .userInfoEndpoint(userInfo -> userInfo.userInfoMapper(userInfoMapper))
                                 .providerConfigurationEndpoint(Customizer.withDefaults())
@@ -224,6 +248,9 @@ public class AuthorizationServerConfig {
      *   <li>{@code device_id}: the clientId of the registered client, added ONLY for
      *       client_credentials access tokens whose client_kind = 'device'. Mosquitto's
      *       JWT plugin uses this for MQTT ACL evaluation.</li>
+     *   <li>audience-bound clients ({@code access-token-audience}): access tokens of user-driven
+     *       grants get header {@code typ: at+jwt}, {@code aud} = [configured audience] and a
+     *       {@code client_id} claim, and no {@code role} or {@code device_id} (docs/080 §4.2).</li>
      * </ul>
      */
     @Bean
@@ -232,6 +259,31 @@ public class AuthorizationServerConfig {
             boolean isAccessToken = OAuth2TokenType.ACCESS_TOKEN.equals(context.getTokenType());
             boolean isIdToken = "id_token".equals(context.getTokenType().getValue());
             if (!isAccessToken && !isIdToken) return;
+
+            // Audience-bound clients (docs/080 §4.2): tokens for one resource server only. Limited to
+            // user-driven grants, so a device client that happens to share the client_id is unaffected.
+            // Fail closed (#107): a row seeded as audience-bound never falls back to the default shape.
+            // The token-request guard refuses such a client first; this is the last line of defence.
+            if (oidcClientProperties.isAudienceBoundWithoutDefinition(context.getRegisteredClient())) {
+                throw new OAuth2AuthenticationException(new OAuth2Error(OAuth2ErrorCodes.SERVER_ERROR,
+                        "This client is not configured", null));
+            }
+            AuthorizationGrantType grant = context.getAuthorizationGrantType();
+            String clientId = context.getRegisteredClient().getClientId();
+            String audience = oidcClientProperties.findClient(clientId)
+                    .map(OidcClientProperties.ClientDefinition::getAccessTokenAudience)
+                    .filter(a -> !a.isBlank())
+                    .orElse(null);
+            if (isAccessToken && audience != null
+                    && (AuthorizationGrantType.AUTHORIZATION_CODE.equals(grant)
+                        || AuthorizationGrantType.REFRESH_TOKEN.equals(grant))) {
+                context.getJwsHeader().type("at+jwt");
+                // Mutable list on purpose: the claims are stored with the authorization as typed JSON and
+                // read back on every refresh; the store's Jackson allowlist rejects JDK immutable lists.
+                context.getClaims().audience(new ArrayList<>(List.of(audience)));
+                context.getClaims().claim("client_id", clientId);
+                return; // no role, no device_id
+            }
 
             // role claim — only emit for ROLE_* authorities (user-driven grants)
             context.getPrincipal().getAuthorities().stream()
