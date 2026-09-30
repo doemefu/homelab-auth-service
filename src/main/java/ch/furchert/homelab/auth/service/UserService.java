@@ -81,6 +81,11 @@ public class UserService {
                 throw new IllegalArgumentException("Invalid status: " + request.status());
             }
             user.setStatus(request.status());
+            if ("INACTIVE".equals(request.status())) {
+                // Same revocation as a deletion: a deactivated user's refresh tokens and consents go too,
+                // so no client can keep refreshing (rotating refresh tokens would otherwise never expire).
+                revokeAuthorizations(user.getUsername());
+            }
         }
 
         return UserResponse.from(userRepository.save(user));

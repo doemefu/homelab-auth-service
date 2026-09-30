@@ -27,6 +27,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -154,6 +155,32 @@ class UserServiceTest {
         userService.updateUser(1L, request);
 
         verify(userRepository).save(any(User.class));
+    }
+
+    @Test
+    void updateUser_settingInactiveRevokesAuthorizationsAndConsents() {
+        UpdateUserRequest request = new UpdateUserRequest(null, null, null, "INACTIVE");
+        when(userRepository.findById(1L)).thenReturn(Optional.of(existingUser));
+        when(userRepository.save(any(User.class))).thenReturn(existingUser);
+
+        userService.updateUser(1L, request);
+
+        assertThat(existingUser.getStatus()).isEqualTo("INACTIVE");
+        verify(jdbcTemplate).update("DELETE FROM oauth2_authorization WHERE principal_name = ?", "testuser");
+        verify(jdbcTemplate).update("DELETE FROM oauth2_authorization_consent WHERE principal_name = ?", "testuser");
+    }
+
+    @Test
+    void updateUser_settingActiveRevokesNothing() {
+        existingUser.setStatus("INACTIVE");
+        UpdateUserRequest request = new UpdateUserRequest(null, null, null, "ACTIVE");
+        when(userRepository.findById(1L)).thenReturn(Optional.of(existingUser));
+        when(userRepository.save(any(User.class))).thenReturn(existingUser);
+
+        userService.updateUser(1L, request);
+
+        assertThat(existingUser.getStatus()).isEqualTo("ACTIVE");
+        verifyNoInteractions(jdbcTemplate);
     }
 
     @Test
