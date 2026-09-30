@@ -21,6 +21,7 @@ auth-service (this service)
 ├── OIDC SSO ├──> n8n (https://n8n.furchert.ch)
 ├── OIDC SSO ├──> LiteLLM (https://ai.furchert.ch)
 ├── OIDC SSO ├──> device-service (https://device.furchert.ch)
+├── OAuth2 ├──> claude-mcp-hub (claude.ai connector; audience-bound tokens for the MCP hub)
 └── JWKS endpoint ──> device-service (token validation)
                      └── JWKS endpoint ──> data-service (token validation)
 ```
@@ -76,7 +77,7 @@ auth-service (this service)
 |--------|------|------|-------------|
 | GET | `/.well-known/openid-configuration` | None | OIDC Discovery document |
 | GET | `/oauth2/authorize` | Session (form login) | Authorization endpoint — initiates OIDC flow |
-| POST | `/oauth2/token` | Client credentials (Basic) | Token endpoint — `authorization_code` (SSO) and `client_credentials` (IoT device, `device-service`, `furchert-ch`) grants |
+| POST | `/oauth2/token` | Client credentials (Basic; `client_secret_post` also for `claude-mcp-hub`) | Token endpoint — `authorization_code` (SSO) and `client_credentials` (IoT device, `device-service`, `furchert-ch`) grants |
 | GET | `/oauth2/jwks` | None | JSON Web Key Set — public keys for token validation |
 | GET | `/userinfo` | Bearer token | OIDC UserInfo endpoint — returns user claims |
 | POST | `/connect/logout` | Session | RP-Initiated Logout — redirects to post-logout URL |
@@ -179,9 +180,26 @@ instead of `role` — used by Mosquitto as the MQTT username:
 }
 ```
 
+**`claude-mcp-hub` access tokens** are bound to the MCP hub: header `typ: at+jwt`, `aud`
+= the hub URL (a single audience is serialised as a string), a `client_id` claim, no `role`
+and no ID token. See `INTERFACES.md` §2 "claude-mcp-hub".
+
+```json
+{
+  "sub": "username",
+  "aud": "https://mcp.furchert.ch/mcp",
+  "client_id": "claude-mcp-hub",
+  "scope": ["mail:read", "calendar:read"],
+  "iss": "https://auth.furchert.ch",
+  "iat": 1714234567,
+  "exp": 1714235167
+}
+```
+
 ### Token Expiry
 
 - **Access Token:** 15 minutes (configurable via `app.jwt.access-token-expiry`)
+- **`claude-mcp-hub` Access Token:** 10 minutes; its refresh token rotates on every refresh
 - **Device Client Token:** 1 hour (`app.oidc.device-clients.access-token-ttl-seconds`), no refresh token
 - **Refresh Token:** 7 days (configurable via `app.jwt.refresh-token-expiry`)
 - **Authorization Code:** 5 minutes (hardcoded)
@@ -196,6 +214,7 @@ All OIDC clients are configured in `application.yaml` under `app.oidc.clients`. 
 - `post-logout-redirect-uris`: Where to redirect after logout
 - `scopes`: List of OIDC scopes (typically `openid`, `profile`, `email`)
 - `grant-types` (optional): defaults to `authorization_code` + `refresh_token`
+- further optional per-client keys (authentication methods, consent, token lifetime, refresh rotation, audience-bound tokens, allowed `resource` values, user allowlist): see `INTERFACES.md` §2 "claude-mcp-hub"
 
 A client whose secret resolves to blank is not seeded. The `data-service` client relies
 on that: its secret env var is optional.

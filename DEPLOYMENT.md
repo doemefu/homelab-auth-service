@@ -177,8 +177,10 @@ kubectl -n apps logs -l app=auth-service --tail=400 --request-timeout=10s | grep
 # expected: Seeded SSO client 'claude-mcp-hub' (first start with the secret only)
 # not expected: Client 'claude-mcp-hub' has no allowed users configured; ...
 ```
-   If `Seeded SSO client 'claude-mcp-hub'` is missing on the first start with the secret,
-   check whether a device client uses that id (the seeder then skips the hub client):
+   If `Seeded SSO client 'claude-mcp-hub'` is missing on the first start with the secret and
+   the log shows `SSO client 'claude-mcp-hub' not seeded: another registered client already
+   uses this client id`, a device client holds that id and the seeder skips the hub client.
+   Check the row:
 ```bash
 kubectl -n apps exec postgresql-0 -c postgresql -- psql -U postgres -d homelabdb -tAc \
   "SELECT client_kind FROM oauth2_registered_client WHERE client_id = 'claude-mcp-hub'"
@@ -236,29 +238,52 @@ Check first (read-only):
 kubectl -n apps exec postgresql-0 -c postgresql -- psql -U postgres -d homelabdb -tAc \
   "SELECT count(*) FROM oauth2_registered_client WHERE client_id = 'claude-mcp-hub'"
 ```
-`0` means the client was never seeded: no step below is needed. Otherwise, in this order:
+`0` means the client was never seeded: no step below is needed. Otherwise, in this order.
+Every step needs the owner's go.
 
-1. Owner go (every step below is an owner action or needs the owner's go).
-2. Hub kill switch (spec 080 §4.6 L2 step 1):
+1. Hub kill switch (spec 080 §4.6 L2 step 1):
 ```bash
 kubectl -n apps patch secret mcp-hub-secrets --type merge -p '{"stringData":{"allowed-subjects":""}}'
 kubectl -n apps delete pod -l app=mcp-hub
 ```
-3. Remove **both** SOPS variables `auth_service_claude_mcp_hub_client_secret` and
+2. Remove **both** SOPS variables `auth_service_claude_mcp_hub_client_secret` and
    `auth_service_claude_mcp_hub_allowed_users` (with only one of them the play fails), then
    run playbook 59 from a checkout on `main`:
    `ansible-playbook infra/playbooks/59_app_services.yml` — expect the message "skipping
    the claude-mcp-hub keys in homelab-auth-secrets".
-4. Remove both keys from the Secret (the playbook leaves existing keys in place), then list
-   the key names only:
+3. Remove each key with its own JSON patch, only if it still exists (the playbook leaves
+   existing keys in place), then list the key names only:
 ```bash
-kubectl -n apps patch secret homelab-auth-secrets --type json -p '[{"op":"remove","path":"/data/claude-mcp-hub-client-secret"},{"op":"remove","path":"/data/claude-mcp-hub-allowed-users"}]'
+# jq exit 0 = key present, 1 = already gone, anything else = the Secret could not be read.
+for k in claude-mcp-hub-client-secret claude-mcp-hub-allowed-users; do
+  kubectl -n apps get secret homelab-auth-secrets --request-timeout=10s -o json | jq -e --arg k "$k" '.data[$k]' >/dev/null
+  case $? in
+    0) kubectl -n apps patch secret homelab-auth-secrets --type json -p "[{\"op\":\"remove\",\"path\":\"/data/$k\"}]" ;;
+    1) echo "$k is already gone - skipped" ;;
+    *) echo "could not read homelab-auth-secrets - stop and check cluster access before going on"; break ;;
+  esac
+done
 kubectl -n apps get secret homelab-auth-secrets --request-timeout=10s -o json | jq '.data | keys'
 # expect: neither claude-mcp-hub-client-secret nor claude-mcp-hub-allowed-users in the list
 ```
+   Off-LAN (one-shot kubectl over SSH, see the infrastructure `DEPLOYMENT.md`):
+```bash
+for k in claude-mcp-hub-client-secret claude-mcp-hub-allowed-users; do
+  ssh -i ~/.ssh/homelab -o IdentitiesOnly=yes -o ProxyCommand="cloudflared access ssh --hostname %h" ansible@ssh.furchert.ch \
+    'sudo k3s kubectl -n apps get secret homelab-auth-secrets -o json' | jq -e --arg k "$k" '.data[$k]' >/dev/null
+  case $? in
+    0) ssh -i ~/.ssh/homelab -o IdentitiesOnly=yes -o ProxyCommand="cloudflared access ssh --hostname %h" ansible@ssh.furchert.ch \
+         "sudo k3s kubectl -n apps patch secret homelab-auth-secrets --type json -p '[{\"op\":\"remove\",\"path\":\"/data/$k\"}]'" ;;
+    1) echo "$k is already gone - skipped" ;;
+    *) echo "could not read homelab-auth-secrets - stop and check the SSH access before going on"; break ;;
+  esac
+done
+ssh -i ~/.ssh/homelab -o IdentitiesOnly=yes -o ProxyCommand="cloudflared access ssh --hostname %h" ansible@ssh.furchert.ch \
+  'sudo k3s kubectl -n apps get secret homelab-auth-secrets -o json' | jq '.data | keys'
+```
    From now on every start of auth-service sees a blank secret and cannot seed the client
    again, whatever image runs.
-5. Remove the client with its consents and authorizations, in one transaction, the client
+4. Remove the client with its consents and authorizations, in one transaction, the client
    row last (loading a consent fails for a missing client):
 ```bash
 kubectl -n apps exec -i postgresql-0 -c postgresql -- psql -U postgres -d homelabdb -v ON_ERROR_STOP=1 <<'SQL'
@@ -273,23 +298,23 @@ COMMIT;
 SQL
 # expect BEGIN, three DELETE lines (the last one DELETE 1), COMMIT
 ```
-6. Verify the row is gone:
+5. Verify the row is gone:
 ```bash
 kubectl -n apps exec postgresql-0 -c postgresql -- psql -U postgres -d homelabdb -tAc \
   "SELECT count(*) FROM oauth2_registered_client WHERE client_id = 'claude-mcp-hub'"
 # expect 0
 ```
-7. Only then merge the revert, deploy an older image or change the configuration entry.
+6. Only then merge the revert, deploy an older image or change the configuration entry.
    A revert of #107 keeps `src/main/resources/db/migration/V8__oauth2_authorization_consent_timestamps.sql`:
    the migration is additive, and an older image starts on the migrated schema.
 
 Why this order: the kill switch stops the hub while the identity-provider side is taken
 apart; the Secret keys go before the SQL because a pod restart with the secret still
-present would seed the client again. Access tokens issued before step 5 stay valid until
-`exp` (at most 10 minutes), but the hub refuses them after step 2.
+present would seed the client again. Access tokens issued before step 4 stay valid until
+`exp` (at most 10 minutes), but the hub refuses them after step 1.
 
 **Removing any other client row by hand:** delete its consents and authorizations first,
-then the row, as in step 5.
+then the row, as in step 4.
 
 ---
 

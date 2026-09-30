@@ -390,8 +390,7 @@ audience comes from configuration; the received value is never copied into the t
 rejected value is logged at WARN (control characters replaced, truncated to 200
 characters).
 
-Tokens of this client are intended for the MCP hub only. Token validation hardening
-across services: see `#101` and `doemefu/homelab-device-service#81`.
+Tokens of this client are intended for the MCP hub only.
 
 **Configuration drift.** The registered-client row of `claude-mcp-hub` carries the client
 setting `settings.client.homelab.audience-bound`. While this setting is present, the
