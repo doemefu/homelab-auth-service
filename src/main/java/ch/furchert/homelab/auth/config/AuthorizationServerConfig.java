@@ -1,5 +1,6 @@
 package ch.furchert.homelab.auth.config;
 
+import ch.furchert.homelab.auth.security.AuditingAuthorizationConsentService;
 import ch.furchert.homelab.auth.security.ClientAuthorizationRequestValidator;
 import ch.furchert.homelab.auth.security.OidcUserInfoMapper;
 import ch.furchert.homelab.auth.security.ResourceIndicatorPolicy;
@@ -36,7 +37,9 @@ import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtException;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationConsentService;
 import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationService;
+import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationConsentService;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService;
 import org.springframework.security.oauth2.server.authorization.OAuth2TokenType;
 import org.springframework.security.oauth2.server.authorization.authentication.OAuth2AuthorizationCodeRequestAuthenticationProvider;
@@ -231,6 +234,20 @@ public class AuthorizationServerConfig {
             JdbcOperations jdbcOperations,
             RegisteredClientRepository registeredClientRepository) {
         return new JdbcOAuth2AuthorizationService(jdbcOperations, registeredClientRepository);
+    }
+
+    /**
+     * Consent decisions are stored in oauth2_authorization_consent (Flyway V3, timestamps V8) for every
+     * client that requires consent; clients with consent disabled never write rows. Revocation paths
+     * (password reset, username change, device-client deletion) delete the rows.
+     */
+    @Bean
+    public OAuth2AuthorizationConsentService authorizationConsentService(
+            JdbcOperations jdbcOperations,
+            RegisteredClientRepository registeredClientRepository) {
+        return new AuditingAuthorizationConsentService(
+                new JdbcOAuth2AuthorizationConsentService(jdbcOperations, registeredClientRepository),
+                jdbcOperations, registeredClientRepository);
     }
 
     @Bean
