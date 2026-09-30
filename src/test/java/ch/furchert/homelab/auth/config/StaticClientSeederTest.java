@@ -18,11 +18,13 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.springframework.boot.ApplicationArguments;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 
-@ExtendWith(MockitoExtension.class)
+@ExtendWith({MockitoExtension.class, OutputCaptureExtension.class})
 class StaticClientSeederTest {
 
     @Mock
@@ -56,6 +58,11 @@ class StaticClientSeederTest {
                 .build();
     }
 
+    private void stubKind(String clientId, String kind) {
+        when(jdbcTemplate.queryForObject("SELECT client_kind FROM oauth2_registered_client WHERE client_id = ?",
+                String.class, clientId)).thenReturn(kind);
+    }
+
     private OidcClientProperties.ClientDefinition def(String id, String secret) {
         OidcClientProperties.ClientDefinition d = new OidcClientProperties.ClientDefinition();
         d.setClientId(id);
@@ -84,6 +91,7 @@ class StaticClientSeederTest {
     void skipsExistingClient() {
         props.getClients().add(def("grafana", "{noop}gs"));
         when(repo.findByClientId("grafana")).thenReturn(stubClient("grafana"));
+        stubKind("grafana", "sso");
         when(jdbcTemplate.queryForObject(any(String.class), eq(Integer.class))).thenReturn(1);
 
         seeder.run(mock(ApplicationArguments.class));
@@ -97,6 +105,7 @@ class StaticClientSeederTest {
         props.getClients().add(def("ha", "{noop}hs"));
         props.getClients().add(def("n8n", "{noop}ns"));
         when(repo.findByClientId("grafana")).thenReturn(stubClient("grafana"));
+        stubKind("grafana", "sso");
         when(repo.findByClientId("ha")).thenReturn(null);
         when(repo.findByClientId("n8n")).thenReturn(null);
         when(jdbcTemplate.queryForObject(any(String.class), eq(Integer.class))).thenReturn(3);
@@ -178,6 +187,32 @@ class StaticClientSeederTest {
         assertThat(saved.getScopes()).containsExactly("login-events:read");
         assertThat(saved.getAuthorizationGrantTypes()).extracting(g -> g.getValue())
                 .containsExactly("client_credentials");
+    }
+
+    @Test
+    void warnsWhenAnotherKindOfClientHoldsTheClientId(CapturedOutput out) {
+        props.getClients().add(def("claude-mcp-hub", "{noop}s"));
+        when(repo.findByClientId("claude-mcp-hub")).thenReturn(stubClient("claude-mcp-hub"));
+        stubKind("claude-mcp-hub", "device");
+        when(jdbcTemplate.queryForObject(any(String.class), eq(Integer.class))).thenReturn(1);
+
+        seeder.run(mock(ApplicationArguments.class));
+
+        verify(repo, never()).save(any());
+        assertThat(out.getOut()).contains("WARN").contains("'claude-mcp-hub'").doesNotContain("device");
+    }
+
+    @Test
+    void existingSsoRowIsSkippedWithoutWarning(CapturedOutput out) {
+        props.getClients().add(def("grafana", "{noop}gs"));
+        when(repo.findByClientId("grafana")).thenReturn(stubClient("grafana"));
+        stubKind("grafana", "sso");
+        when(jdbcTemplate.queryForObject(any(String.class), eq(Integer.class))).thenReturn(1);
+
+        seeder.run(mock(ApplicationArguments.class));
+
+        verify(repo, never()).save(any());
+        assertThat(out.getOut()).doesNotContain("WARN");
     }
 
     @Test

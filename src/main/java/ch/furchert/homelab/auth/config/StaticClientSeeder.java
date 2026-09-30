@@ -57,7 +57,17 @@ public class StaticClientSeeder implements ApplicationRunner {
                 continue;
             }
             if (registeredClientRepository.findByClientId(def.getClientId()) != null) {
-                log.debug("SSO client '{}' already present in DB; skipping seed", def.getClientId());
+                String kind = jdbcTemplate.queryForObject(
+                        "SELECT client_kind FROM oauth2_registered_client WHERE client_id = ?",
+                        String.class, def.getClientId());
+                if (kind != null && !"sso".equals(kind)) {
+                    // Another kind of client (e.g. a device client) holds this id: the configured client
+                    // is never seeded until that row is removed.
+                    log.warn("SSO client '{}' not seeded: another registered client already uses this client id",
+                            def.getClientId());
+                } else {
+                    log.debug("SSO client '{}' already present in DB; skipping seed", def.getClientId());
+                }
                 continue;
             }
             RegisteredClient client = buildRegisteredClient(def);
