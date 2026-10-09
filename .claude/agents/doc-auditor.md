@@ -1,6 +1,6 @@
 ---
 name: doc-auditor
-description: Audits project docs (README.md, DEPLOYMENT.md, CONTRIBUTING.md) after a service change and produces a concrete checklist of required updates. Invoke automatically at Phase 5 (ship) of the CLAUDE.md workflow.
+description: Audits project docs (README.md, DEPLOYMENT.md, CONTRIBUTING.md) after a service change and produces a concrete checklist of required updates. Invoke automatically at Phase 6 (ship) of the CLAUDE.md workflow.
 tools: Read, Grep
 ---
 

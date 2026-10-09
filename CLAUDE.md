@@ -16,7 +16,7 @@ JWT authentication service for the doemefu homelab IoT ecosystem. Issues OAuth2/
 
 ## Architecture Context
 
-device-service and furchert-ch consume tokens issued by this service — device-service validates JWTs via the JWKS endpoint (`/oauth2/jwks`), furchert-ch authenticates its OIDC-gated `/dashboard` via full OIDC login against this IdP. Open WebUI, n8n, and LiteLLM are additionally registered as OIDC clients. data-service (deployed 2026-09-23) validates JWTs via the JWKS endpoint like device-service; furchert-ch additionally fetches `client_credentials` tokens with scope `netmon:read` for it (V6); NM-4 adds the `data-service` client (scope `login-events:read`) that pulls login events. This service makes no runtime calls to other services — it is purely a producer of tokens and identity.
+device-service and furchert-ch consume tokens issued by this service — device-service validates JWTs via the JWKS endpoint (`/oauth2/jwks`), furchert-ch authenticates its OIDC-gated `/dashboard` via full OIDC login against this IdP. Open WebUI, n8n, and LiteLLM are additionally registered as OIDC clients. data-service validates JWTs via the JWKS endpoint like device-service; furchert-ch fetches `client_credentials` tokens with scope `netmon:read` for it (V6); the `data-service` client (scope `login-events:read`) pulls login events. This service makes no runtime calls to other services — it is purely a producer of tokens and identity.
 
 **Full architecture spec:** `../docs/052-architecture-target.md`
 **Implementation plan:** `docs/PLAN.md`
@@ -28,7 +28,7 @@ device-service and furchert-ch consume tokens issued by this service — device-
 - Do **not** use `ddl-auto=update` or `ddl-auto=create` — Flyway only
 - Do **not** log passwords, tokens, or secrets in any form
 - Do **not** introduce new dependencies without explicit user approval
-- Commit, push and open PRs on feature branches without asking (standing permission, 2026-08-28). Merging, force-pushes, playbook runs, cluster mutations and anything touching SOPS/secrets need an explicit go for that task.
+- Commit, push and open PRs on feature branches without asking. Merging PRs is always the user's. Rolling out changes the user has already merged needs no extra go; force-pushes, playbook runs and other cluster mutations need an explicit go. SOPS files are never read or edited by Claude — the user edits them.
 - Before any merge, wait for the Copilot review and fix or answer every comment (see `.claude/rules/workflow.md` Phase 5).
 - All comments and documentation in **English**
 - Minimize diff size: no drive-by refactors
