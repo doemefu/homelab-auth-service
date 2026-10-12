@@ -44,15 +44,18 @@ Implement the plan:
 - For test driven implementation invoke superpower skill test-driven-development.
 - Use context7 to check for the latest documentation if things are unclear.
 - Run lint/check commands from the plan and capture results in the worklog.
+- Commit, push and open the PR on a feature branch without asking; merging is always the user's.
 
 ## Phase 5 — check implementation
 Reviews against plan, reports issues by severity. Critical issues block progress.
 - **GitHub:** move the corresponding issue to **In review** (see `github-project.md`).
 - Invoke superpowers requesting-code-review Skill.
+- Open the PR, wait for the Copilot review and fix or answer every comment before asking the user to merge.
+- If Copilot does not review (quota exhausted), substitute the `reviewer` subagent + `/code-review` and disclose the review path in a PR comment.
 
 ## Phase 6 — ship
 - Run integration checks if possible (e.g., deploy to cluster, verify via kubectl).
-- **Invoke the `doc-auditor` subagent** to check whether DEPLOYMENT.md, CONTRIBUTING.md, or README.md need updates. Implement all required changes it identifies.
+- **Invoke the `doc-auditor` subagent** to check whether any doc listed in `documentation-files.md` needs updates. Implement all required changes it identifies.
 - Provide final summary: what changed, how verified, follow-ups.
 - **Required: Insert a new block at the top of `.claude/memory/MEMORY.md`** — decision, worklog link, open items.
 - **GitHub:** move the corresponding issue to **Done** (see `github-project.md`).
