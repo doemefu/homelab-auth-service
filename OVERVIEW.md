@@ -89,6 +89,7 @@ auth-service (this service)
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
+| GET | `/api/v1/users?page&size` | ADMIN | List users, ordered by id (`size` 1–100, default 50) |
 | POST | `/api/v1/users` | ADMIN | Create a new user |
 | GET | `/api/v1/users/{id}` | Bearer token (ADMIN or self) | Get user details |
 | PUT | `/api/v1/users/{id}` | ADMIN | Update user (username, email, role, status) |

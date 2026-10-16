@@ -515,9 +515,11 @@ The REST API uses **Bearer token authentication** with JWT tokens obtained via O
 | Endpoint | Required Role | Notes |
 |----------|---------------|-------|
 | `GET /users/{id}` | Any authenticated | User can access own profile |
-| All other `/users` endpoints | `ADMIN` | Full CRUD access |
+| All other `/users` endpoints | `ADMIN` | Full CRUD access, incl. the paginated list `GET /users` |
 | All `/clients` endpoints | `ADMIN` **or** `clients:admin` scope | IoT device client lifecycle — see §8 |
 | `GET /login-events` | `login-events:read` scope only (ADMIN gets 403) | Login-event outbox for data-service — see §2 "data-service" |
+
+`GET /users?page=0&size=50` lists users ordered by `id` ascending (`page` zero-based, `size` 1–100, default 50; out-of-range values return `400`). Response: `{ "users": [<UserResponse>…], "page": 0, "size": 50, "totalElements": 7 }` — each entry has the same shape as `GET /users/{id}` (`id`, `username`, `email`, `role`, `status`, `createdAt`, `updatedAt`). The `clients:admin` scope does **not** grant access; a user token with role `ADMIN` is required (furchert-ch `/dashboard/auth` calls it server-side with the signed-in admin's access token).
 
 Deleting a user, setting the user's status to `INACTIVE`, or changing the user's role revokes the user's authorizations and consents; reactivation restores nothing. After a role change the user's refresh tokens no longer work. A demotion applies to every token issued after it; a promotion applies after the user signs out (`/connect/logout`) and in again. Access tokens issued before the change stay valid until they expire (the client's access-token TTL). A request that sets the current role again revokes nothing.
 

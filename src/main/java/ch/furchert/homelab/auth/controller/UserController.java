@@ -3,6 +3,7 @@ package ch.furchert.homelab.auth.controller;
 import ch.furchert.homelab.auth.dto.CreateUserRequest;
 import ch.furchert.homelab.auth.dto.ResetPasswordRequest;
 import ch.furchert.homelab.auth.dto.UpdateUserRequest;
+import ch.furchert.homelab.auth.dto.UserPage;
 import ch.furchert.homelab.auth.dto.UserResponse;
 import ch.furchert.homelab.auth.service.UserService;
 import jakarta.validation.Valid;
@@ -25,6 +26,12 @@ public class UserController {
     @PostMapping
     public ResponseEntity<UserResponse> createUser(@Valid @RequestBody CreateUserRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(userService.createUser(request));
+    }
+
+    @GetMapping
+    public UserPage listUsers(@RequestParam(defaultValue = "0") int page,
+                              @RequestParam(defaultValue = "50") int size) {
+        return userService.listUsers(page, size);
     }
 
     @GetMapping("/{id}")

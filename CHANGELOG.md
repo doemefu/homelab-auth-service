@@ -8,6 +8,7 @@
 
 ### Added
 
+- `GET /api/v1/users?page&size`: paginated user list (ordered by id, `size` 1–100, default 50), `ADMIN` only — backs the furchert-ch `/dashboard/auth` admin GUI (doemefu/furchert-ch#44)
 - OIDC Identity Provider via Spring Authorization Server — SSO for all furchert.ch homelab services
 - Authorization Code Flow with PKCE (`/oauth2/authorize`, `/oauth2/token`)
 - OIDC discovery document at `/.well-known/openid-configuration`
