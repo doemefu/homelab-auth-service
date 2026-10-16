@@ -184,6 +184,31 @@ class UserServiceTest {
     }
 
     @Test
+    void updateUser_changingRoleRevokesAuthorizationsAndConsents() {
+        UpdateUserRequest request = new UpdateUserRequest(null, null, Role.ADMIN, null);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(existingUser));
+        when(userRepository.save(any(User.class))).thenReturn(existingUser);
+
+        userService.updateUser(1L, request);
+
+        assertThat(existingUser.getRole()).isEqualTo(Role.ADMIN);
+        verify(jdbcTemplate).update("DELETE FROM oauth2_authorization WHERE principal_name = ?", "testuser");
+        verify(jdbcTemplate).update("DELETE FROM oauth2_authorization_consent WHERE principal_name = ?", "testuser");
+    }
+
+    @Test
+    void updateUser_sameRoleRevokesNothing() {
+        UpdateUserRequest request = new UpdateUserRequest(null, null, Role.USER, null);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(existingUser));
+        when(userRepository.save(any(User.class))).thenReturn(existingUser);
+
+        userService.updateUser(1L, request);
+
+        assertThat(existingUser.getRole()).isEqualTo(Role.USER);
+        verifyNoInteractions(jdbcTemplate);
+    }
+
+    @Test
     void deleteUser_whenExists_deletesSuccessfully() {
         User user = new User();
         user.setId(1L);

@@ -73,7 +73,10 @@ public class UserService {
             }
             user.setEmail(request.email());
         }
-        if (request.role() != null) {
+        if (request.role() != null && request.role() != user.getRole()) {
+            // Refresh-grant access tokens are built from the principal stored at login, so existing
+            // authorizations would keep issuing tokens with the old role until the refresh token expires.
+            revokeAuthorizations(user.getUsername());
             user.setRole(request.role());
         }
         if (request.status() != null) {
