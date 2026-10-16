@@ -40,6 +40,8 @@
 
 - `StaticClientSeeder` skips clients whose secret resolves to blank. This makes optional clients such as `data-service` possible.
 - A non-numeric query parameter now returns `400` instead of `500` (`MethodArgumentTypeMismatchException` handler).
+- Changing a user's role (`PUT /api/v1/users/{id}`) removes the user's authorizations (refresh tokens) and consents. Setting the current role again removes nothing.
+- Every user token is now checked against the `users` table when it is issued, not only against the authorities captured at sign-in. If the role there differs from the role at sign-in, the token gets `role=USER` until the user signs in again; a deleted or `INACTIVE` user gets `invalid_grant`. Before, a demoted admin kept receiving `role=ADMIN` tokens via refresh (up to 7 days) or by reusing their login session, and a deleted or deactivated user could still get tokens through an open login session. A promoted user gets `ADMIN` after signing out and in again. Access tokens issued before a change stay valid until they expire.
 - Setting a user's status to `INACTIVE` (`PUT /api/v1/users/{id}`) removes the user's authorizations (refresh tokens) and consents; reactivating the user restores nothing, a new sign-in is needed (#107).
 - Deleting a user (`DELETE /api/v1/users/{id}`) also removes the user's authorizations (refresh tokens) and consents, as a password reset already does (#107).
 - `StaticClientSeeder` reads authentication methods, consent, access-token lifetime and refresh rotation from each client definition; defaults keep existing clients unchanged. Clients with `access-token-audience` are seeded with the setting `settings.client.homelab.audience-bound` and receive no codes or tokens while their configuration entry is missing.

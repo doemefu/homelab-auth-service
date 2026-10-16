@@ -67,7 +67,7 @@ today this is only `claude-mcp-hub`. Every other client signs in without one.
   It survives restarts. When the stored scopes cover the request, no consent page is shown;
   otherwise it appears again with the stored scopes pre-selected.
 - **Deleted when** the user denies every scope, the user's password is reset, the username
-  changes, the user is set to `INACTIVE` or deleted, the client is deleted, or an operator
+  changes, the user's role changes, the user is set to `INACTIVE` or deleted, the client is deleted, or an operator
   revokes it (`DEPLOYMENT.md`). There is no purge job. After a deletion the consent page is
   shown again at the next authorization.
 - **Privacy.** Rows contain the username and the granted scopes, no secrets; they appear in
@@ -91,7 +91,7 @@ Standard OIDC claims plus custom claims:
 }
 ```
 
-The `role` claim contains the user's role (`USER` or `ADMIN`).
+The `role` claim contains the user's role (`USER` or `ADMIN`). Every token is checked against the `users` table when it is issued, also on refresh and when an existing login session is reused: if the role there differs from the role at sign-in, the token gets `USER` until the user signs in again, and a deleted or `INACTIVE` user gets `invalid_grant` instead of a token.
 
 ### UserInfo Response
 
@@ -521,7 +521,7 @@ The REST API uses **Bearer token authentication** with JWT tokens obtained via O
 
 `GET /users?page=0&size=50` lists users ordered by `id` ascending (`page` zero-based, `size` 1–100, default 50; out-of-range values return `400`). Response: `{ "users": [<UserResponse>…], "page": 0, "size": 50, "totalElements": 7 }` — each entry has the same shape as `GET /users/{id}` (`id`, `username`, `email`, `role`, `status`, `createdAt`, `updatedAt`). The `clients:admin` scope does **not** grant access; a user token with role `ADMIN` is required (furchert-ch `/dashboard/auth` calls it server-side with the signed-in admin's access token).
 
-Deleting a user or setting the user's status to `INACTIVE` revokes the user's authorizations and consents; reactivation restores nothing.
+Deleting a user, setting the user's status to `INACTIVE`, or changing the user's role revokes the user's authorizations and consents; reactivation restores nothing. After a role change the user's refresh tokens no longer work. A demotion applies to every token issued after it; a promotion applies after the user signs out (`/connect/logout`) and in again. Access tokens issued before the change stay valid until they expire (the client's access-token TTL). A request that sets the current role again revokes nothing.
 
 ### API Summary
 

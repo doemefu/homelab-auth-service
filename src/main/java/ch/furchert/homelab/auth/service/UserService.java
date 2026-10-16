@@ -90,7 +90,10 @@ public class UserService {
             }
             user.setEmail(request.email());
         }
-        if (request.role() != null) {
+        if (request.role() != null && request.role() != user.getRole()) {
+            // Revoke refresh tokens and consents so every client has to send the user through sign-in again;
+            // tokens then carry the new role (see the role claim in AuthorizationServerConfig.tokenCustomizer).
+            revokeAuthorizations(user.getUsername());
             user.setRole(request.role());
         }
         if (request.status() != null) {
