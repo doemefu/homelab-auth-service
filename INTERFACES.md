@@ -91,7 +91,7 @@ Standard OIDC claims plus custom claims:
 }
 ```
 
-The `role` claim contains the user's role (`USER` or `ADMIN`).
+The `role` claim contains the user's role (`USER` or `ADMIN`), read from the `users` table when the token is issued — also on refresh and when an existing login session is reused.
 
 ### UserInfo Response
 
@@ -519,7 +519,7 @@ The REST API uses **Bearer token authentication** with JWT tokens obtained via O
 | All `/clients` endpoints | `ADMIN` **or** `clients:admin` scope | IoT device client lifecycle — see §8 |
 | `GET /login-events` | `login-events:read` scope only (ADMIN gets 403) | Login-event outbox for data-service — see §2 "data-service" |
 
-Deleting a user, setting the user's status to `INACTIVE`, or changing the user's role revokes the user's authorizations and consents; reactivation restores nothing. After a role change the user must sign in again and then gets tokens with the new role; a request that sets the current role again revokes nothing.
+Deleting a user, setting the user's status to `INACTIVE`, or changing the user's role revokes the user's authorizations and consents; reactivation restores nothing. After a role change the user's refresh tokens no longer work, and every token issued after the change carries the new role. Access tokens issued before the change stay valid until they expire (the client's access-token TTL). A request that sets the current role again revokes nothing.
 
 ### API Summary
 

@@ -1,5 +1,6 @@
 package ch.furchert.homelab.auth.config;
 
+import ch.furchert.homelab.auth.repository.UserRepository;
 import ch.furchert.homelab.auth.security.AuditingAuthorizationConsentService;
 import ch.furchert.homelab.auth.security.ClientAuthorizationRequestValidator;
 import ch.furchert.homelab.auth.security.OidcUserInfoMapper;
@@ -260,8 +261,8 @@ public class AuthorizationServerConfig {
     /**
      * Adds JWT claims:
      * <ul>
-     *   <li>{@code role}: stripped of the ROLE_ prefix, taken from the principal's first
-     *       authority. Only fires for user-driven grants (auth_code).</li>
+     *   <li>{@code role}: the user's current role from the {@code users} table. Only fires for
+     *       user-driven grants (principal with a ROLE_ authority); omitted when the user no longer exists.</li>
      *   <li>{@code device_id}: the clientId of the registered client, added ONLY for
      *       client_credentials access tokens whose client_kind = 'device'. Mosquitto's
      *       JWT plugin uses this for MQTT ACL evaluation.</li>
@@ -271,7 +272,8 @@ public class AuthorizationServerConfig {
      * </ul>
      */
     @Bean
-    public OAuth2TokenCustomizer<JwtEncodingContext> tokenCustomizer(ClientKindLookup clientKindLookup) {
+    public OAuth2TokenCustomizer<JwtEncodingContext> tokenCustomizer(ClientKindLookup clientKindLookup,
+                                                                    UserRepository userRepository) {
         return context -> {
             boolean isAccessToken = OAuth2TokenType.ACCESS_TOKEN.equals(context.getTokenType());
             boolean isIdToken = "id_token".equals(context.getTokenType().getValue());
@@ -302,14 +304,15 @@ public class AuthorizationServerConfig {
                 return; // no role, no device_id
             }
 
-            // role claim — only emit for ROLE_* authorities (user-driven grants)
-            context.getPrincipal().getAuthorities().stream()
-                    .filter(a -> a.getAuthority().startsWith("ROLE_"))
-                    .findFirst()
-                    .ifPresent(a -> {
-                        String role = a.getAuthority().replaceFirst("^ROLE_", "");
-                        context.getClaims().claim("role", role);
-                    });
+            // role claim — only for user-driven grants (ROLE_* authorities). The value comes from the users
+            // table, not from the principal: the login session and stored authorizations keep the authorities
+            // from sign-in, so a role change would otherwise not reach tokens issued after it.
+            boolean userGrant = context.getPrincipal().getAuthorities().stream()
+                    .anyMatch(a -> a.getAuthority().startsWith("ROLE_"));
+            if (userGrant) {
+                userRepository.findByUsername(context.getPrincipal().getName())
+                        .ifPresent(u -> context.getClaims().claim("role", u.getRole().name()));
+            }
 
             // device_id claim — client_credentials access tokens for device clients
             if (isAccessToken

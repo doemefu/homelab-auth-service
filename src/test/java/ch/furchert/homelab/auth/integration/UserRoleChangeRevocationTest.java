@@ -12,11 +12,14 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import tools.jackson.databind.ObjectMapper;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static ch.furchert.homelab.auth.integration.AuthCodeFlow.HUB;
 import static ch.furchert.homelab.auth.integration.AuthCodeFlow.HUB_RESOURCE;
@@ -27,10 +30,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * Changing a user's role revokes the user's authorizations (refresh tokens) and consents, like setting the
- * user to INACTIVE. Refresh-grant access tokens are built from the principal stored at login, so a surviving
- * authorization would keep issuing tokens with the old role. Real database, real authorization-code flow.
+ * user to INACTIVE, and tokens issued after the change carry the new role even when the login session from
+ * before the change is reused. Real database, real authorization-code flow.
  */
 class UserRoleChangeRevocationTest extends AbstractIntegrationTest {
+
+    private static final String FC = "furchert-ch";
+    private static final String FC_SECRET = "furchert-ch-secret";
+    private static final String FC_CALLBACK = "https://furchert.test.local/api/auth/callback/furchert-ch";
 
     @Autowired
     MockMvc mockMvc;
@@ -76,6 +83,34 @@ class UserRoleChangeRevocationTest extends AbstractIntegrationTest {
         } finally {
             hub.setAllowedUsers(original);
         }
+    }
+
+    @Test
+    void tokensFromALoginSessionOpenedBeforeTheRoleChangeCarryTheNewRole() throws Exception {
+        AuthCodeFlow flow = new AuthCodeFlow(mockMvc, objectMapper, userRepository, passwordEncoder, jdbc, jwkSource);
+        flow.createUser("fcdemoted", "password123", Role.ADMIN);
+        long id = userRepository.findByUsername("fcdemoted").orElseThrow().getId();
+        AuthCodeFlow.Req req = new AuthCodeFlow.Req(FC, FC_CALLBACK, "openid profile email", null);
+
+        AuthCodeFlow.Pkce p1 = AuthCodeFlow.pkce();
+        MvcResult first = flow.authorizeAs(req, "fcdemoted", "password123", p1);
+        MockHttpSession session = (MockHttpSession) first.getRequest().getSession();
+        assertThat(role(flow, first, p1)).isEqualTo("ADMIN");
+
+        userService.updateUser(id, new UpdateUserRequest(null, null, Role.USER, null));
+
+        // Same browser session, no new sign-in: the session still holds the ROLE_ADMIN principal.
+        AuthCodeFlow.Pkce p2 = AuthCodeFlow.pkce();
+        MvcResult second = mockMvc.perform(AuthCodeFlow.authorize(req, p2).session(session)).andReturn();
+        assertThat(role(flow, second, p2)).isEqualTo("USER");
+    }
+
+    private String role(AuthCodeFlow flow, MvcResult authorized, AuthCodeFlow.Pkce p) throws Exception {
+        String code = AuthCodeFlow.param(authorized.getResponse().getRedirectedUrl(), "code");
+        String access = flow.json(flow.exchangeBasic(FC, FC_SECRET, code, FC_CALLBACK, p, null)
+                .andExpect(status().isOk()).andReturn()).get("access_token").asString();
+        Map<String, Object> claims = AuthCodeFlow.payload(access);
+        return (String) claims.get("role");
     }
 
     private Integer authorizationRows(String principalName) {
