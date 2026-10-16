@@ -1,5 +1,7 @@
 package ch.furchert.homelab.auth.config;
 
+import ch.furchert.homelab.auth.entity.Role;
+import ch.furchert.homelab.auth.entity.User;
 import ch.furchert.homelab.auth.repository.UserRepository;
 import ch.furchert.homelab.auth.security.AuditingAuthorizationConsentService;
 import ch.furchert.homelab.auth.security.ClientAuthorizationRequestValidator;
@@ -29,6 +31,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.OAuth2AuthorizationServerConfiguration;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
@@ -60,6 +63,7 @@ import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 @Configuration
 @EnableConfigurationProperties(OidcClientProperties.class)
@@ -261,8 +265,9 @@ public class AuthorizationServerConfig {
     /**
      * Adds JWT claims:
      * <ul>
-     *   <li>{@code role}: the user's current role from the {@code users} table. Only fires for
-     *       user-driven grants (principal with a ROLE_ authority); omitted when the user no longer exists.</li>
+     *   <li>{@code role}: the role at sign-in if the {@code users} table still has it, otherwise
+     *       {@code USER}. Only fires for user-driven grants (principal with a ROLE_ authority); a deleted
+     *       or INACTIVE user gets {@code invalid_grant} instead of a token.</li>
      *   <li>{@code device_id}: the clientId of the registered client, added ONLY for
      *       client_credentials access tokens whose client_kind = 'device'. Mosquitto's
      *       JWT plugin uses this for MQTT ACL evaluation.</li>
@@ -304,14 +309,22 @@ public class AuthorizationServerConfig {
                 return; // no role, no device_id
             }
 
-            // role claim — only for user-driven grants (ROLE_* authorities). The value comes from the users
-            // table, not from the principal: the login session and stored authorizations keep the authorities
-            // from sign-in, so a role change would otherwise not reach tokens issued after it.
-            boolean userGrant = context.getPrincipal().getAuthorities().stream()
-                    .anyMatch(a -> a.getAuthority().startsWith("ROLE_"));
-            if (userGrant) {
-                userRepository.findByUsername(context.getPrincipal().getName())
-                        .ifPresent(u -> context.getClaims().claim("role", u.getRole().name()));
+            // role claim — only for user-driven grants (ROLE_* authorities). The login session and stored
+            // authorizations keep the principal from sign-in, so the users row is checked on every token:
+            // a deleted or INACTIVE user gets none, and a role that differs from the one at sign-in (role
+            // change, or a username reused after a rename) yields USER until the user signs in again.
+            Optional<String> loginRole = context.getPrincipal().getAuthorities().stream()
+                    .map(GrantedAuthority::getAuthority)
+                    .filter(a -> a.startsWith("ROLE_"))
+                    .map(a -> a.substring("ROLE_".length()))
+                    .findFirst();
+            if (loginRole.isPresent()) {
+                User user = userRepository.findByUsername(context.getPrincipal().getName())
+                        .filter(u -> "ACTIVE".equals(u.getStatus()))
+                        .orElseThrow(() -> new OAuth2AuthenticationException(new OAuth2Error(
+                                OAuth2ErrorCodes.INVALID_GRANT, "User is not active", null)));
+                String role = user.getRole().name().equals(loginRole.get()) ? loginRole.get() : Role.USER.name();
+                context.getClaims().claim("role", role);
             }
 
             // device_id claim — client_credentials access tokens for device clients

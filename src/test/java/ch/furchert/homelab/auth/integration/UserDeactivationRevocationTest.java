@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import tools.jackson.databind.ObjectMapper;
@@ -31,9 +32,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * Setting a user to INACTIVE revokes the user's authorizations (refresh tokens) and consents, like
  * deleting the user (#107). Reactivation restores nothing: the user has to sign in again and sees the
- * consent page again. Real database, real authorization-code flow.
+ * consent page again. A login session opened before the user was deactivated or deleted gets no token.
+ * Real database, real authorization-code flow.
  */
 class UserDeactivationRevocationTest extends AbstractIntegrationTest {
+
+    private static final String FC = "furchert-ch";
+    private static final String FC_SECRET = "furchert-ch-secret";
+    private static final String FC_CALLBACK = "https://furchert.test.local/api/auth/callback/furchert-ch";
 
     @Autowired
     MockMvc mockMvc;
@@ -81,6 +87,30 @@ class UserDeactivationRevocationTest extends AbstractIntegrationTest {
             assertThat(r.getResponse().getStatus()).isEqualTo(200);   // consent page again
         } finally {
             hub.setAllowedUsers(original);
+        }
+    }
+
+    @Test
+    void aLoginSessionFromBeforeDeactivationOrDeletionGetsNoToken() throws Exception {
+        AuthCodeFlow flow = new AuthCodeFlow(mockMvc, objectMapper, userRepository, passwordEncoder, jdbc, jwkSource);
+        AuthCodeFlow.Req req = new AuthCodeFlow.Req(FC, FC_CALLBACK, "openid profile email", null);
+        for (String username : List.of("fcpaused", "fcgone")) {
+            flow.createUser(username, "password123", Role.USER);
+            long id = userRepository.findByUsername(username).orElseThrow().getId();
+            MvcResult first = flow.authorizeAs(req, username, "password123", AuthCodeFlow.pkce());
+            MockHttpSession session = (MockHttpSession) first.getRequest().getSession();
+
+            if (username.equals("fcpaused")) {
+                userService.updateUser(id, new UpdateUserRequest(null, null, null, "INACTIVE"));
+            } else {
+                userService.deleteUser(id);
+            }
+
+            AuthCodeFlow.Pkce p = AuthCodeFlow.pkce();
+            MvcResult again = mockMvc.perform(AuthCodeFlow.authorize(req, p).session(session)).andReturn();
+            String code = AuthCodeFlow.param(again.getResponse().getRedirectedUrl(), "code");
+            flow.exchangeBasic(FC, FC_SECRET, code, FC_CALLBACK, p, null)
+                    .andExpect(status().isBadRequest()).andExpect(jsonPath("$.error").value("invalid_grant"));
         }
     }
 }

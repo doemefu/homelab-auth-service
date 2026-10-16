@@ -15,6 +15,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.util.ArrayList;
@@ -30,8 +31,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * Changing a user's role revokes the user's authorizations (refresh tokens) and consents, like setting the
- * user to INACTIVE, and tokens issued after the change carry the new role even when the login session from
- * before the change is reused. Real database, real authorization-code flow.
+ * user to INACTIVE. A login session from before the change never yields more than the lower of the old and
+ * new role: a demotion applies at once, a promotion at the next sign-in. Real database, real auth-code flow.
  */
 class UserRoleChangeRevocationTest extends AbstractIntegrationTest {
 
@@ -105,12 +106,37 @@ class UserRoleChangeRevocationTest extends AbstractIntegrationTest {
         assertThat(role(flow, second, p2)).isEqualTo("USER");
     }
 
+    @Test
+    void aPromotionAppliesOnlyAfterANewSignIn() throws Exception {
+        // Same path as a username reused after a rename: the session's role differs from the row's.
+        AuthCodeFlow flow = new AuthCodeFlow(mockMvc, objectMapper, userRepository, passwordEncoder, jdbc, jwkSource);
+        flow.createUser("fcpromoted", "password123", Role.USER);
+        long id = userRepository.findByUsername("fcpromoted").orElseThrow().getId();
+        AuthCodeFlow.Req req = new AuthCodeFlow.Req(FC, FC_CALLBACK, "openid profile email", null);
+
+        AuthCodeFlow.Pkce p1 = AuthCodeFlow.pkce();
+        MvcResult first = flow.authorizeAs(req, "fcpromoted", "password123", p1);
+        MockHttpSession session = (MockHttpSession) first.getRequest().getSession();
+        assertThat(role(flow, first, p1)).isEqualTo("USER");
+
+        userService.updateUser(id, new UpdateUserRequest(null, null, Role.ADMIN, null));
+
+        AuthCodeFlow.Pkce p2 = AuthCodeFlow.pkce();
+        MvcResult second = mockMvc.perform(AuthCodeFlow.authorize(req, p2).session(session)).andReturn();
+        assertThat(role(flow, second, p2)).isEqualTo("USER");
+
+        AuthCodeFlow.Pkce p3 = AuthCodeFlow.pkce();
+        assertThat(role(flow, flow.authorizeAs(req, "fcpromoted", "password123", p3), p3)).isEqualTo("ADMIN");
+    }
+
     private String role(AuthCodeFlow flow, MvcResult authorized, AuthCodeFlow.Pkce p) throws Exception {
         String code = AuthCodeFlow.param(authorized.getResponse().getRedirectedUrl(), "code");
-        String access = flow.json(flow.exchangeBasic(FC, FC_SECRET, code, FC_CALLBACK, p, null)
-                .andExpect(status().isOk()).andReturn()).get("access_token").asString();
-        Map<String, Object> claims = AuthCodeFlow.payload(access);
-        return (String) claims.get("role");
+        JsonNode body = flow.json(flow.exchangeBasic(FC, FC_SECRET, code, FC_CALLBACK, p, null)
+                .andExpect(status().isOk()).andReturn());
+        Map<String, Object> access = AuthCodeFlow.payload(body.get("access_token").asString());
+        Map<String, Object> id = AuthCodeFlow.payload(body.get("id_token").asString());
+        assertThat(id.get("role")).isEqualTo(access.get("role"));
+        return (String) access.get("role");
     }
 
     private Integer authorizationRows(String principalName) {

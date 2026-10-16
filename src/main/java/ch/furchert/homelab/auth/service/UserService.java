@@ -74,8 +74,8 @@ public class UserService {
             user.setEmail(request.email());
         }
         if (request.role() != null && request.role() != user.getRole()) {
-            // Refresh-grant access tokens are built from the principal stored at login, so existing
-            // authorizations would keep issuing tokens with the old role until the refresh token expires.
+            // Revoke refresh tokens and consents so every client has to send the user through sign-in again;
+            // tokens then carry the new role (see the role claim in AuthorizationServerConfig.tokenCustomizer).
             revokeAuthorizations(user.getUsername());
             user.setRole(request.role());
         }
