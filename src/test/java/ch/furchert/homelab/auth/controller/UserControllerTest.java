@@ -3,6 +3,7 @@ package ch.furchert.homelab.auth.controller;
 import ch.furchert.homelab.auth.config.SecurityConfig;
 import ch.furchert.homelab.auth.dto.CreateUserRequest;
 import ch.furchert.homelab.auth.dto.UpdateUserRequest;
+import ch.furchert.homelab.auth.dto.UserPage;
 import ch.furchert.homelab.auth.dto.UserResponse;
 import ch.furchert.homelab.auth.entity.Role;
 import ch.furchert.homelab.auth.exception.ResourceNotFoundException;
@@ -19,6 +20,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
+import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -48,6 +50,58 @@ class UserControllerTest {
     private UserResponse sampleUser() {
         return new UserResponse(1L, "testuser", "test@example.com", "USER", "ACTIVE",
                 Instant.now(), Instant.now());
+    }
+
+    @Test
+    void listUsers_asAdmin_returns200WithPage() throws Exception {
+        when(userService.listUsers(0, 50)).thenReturn(new UserPage(List.of(sampleUser()), 0, 50, 1));
+
+        mockMvc.perform(get("/api/v1/users")
+                        .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.users[0].username").value("testuser"))
+                .andExpect(jsonPath("$.page").value(0))
+                .andExpect(jsonPath("$.size").value(50))
+                .andExpect(jsonPath("$.totalElements").value(1));
+    }
+
+    @Test
+    void listUsers_passesPageAndSize() throws Exception {
+        when(userService.listUsers(2, 20)).thenReturn(new UserPage(List.of(), 2, 20, 0));
+
+        mockMvc.perform(get("/api/v1/users").param("page", "2").param("size", "20")
+                        .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.page").value(2));
+    }
+
+    @Test
+    void listUsers_withInvalidSize_returns400() throws Exception {
+        when(userService.listUsers(0, 500)).thenThrow(new IllegalArgumentException("size must be between 1 and 100"));
+
+        mockMvc.perform(get("/api/v1/users").param("size", "500")
+                        .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN"))))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void listUsers_asUser_returns403() throws Exception {
+        mockMvc.perform(get("/api/v1/users")
+                        .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_USER"))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void listUsers_withClientsAdminScopeOnly_returns403() throws Exception {
+        mockMvc.perform(get("/api/v1/users")
+                        .with(jwt().authorities(new SimpleGrantedAuthority("SCOPE_clients:admin"))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void listUsers_unauthenticated_returns401() throws Exception {
+        mockMvc.perform(get("/api/v1/users"))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test

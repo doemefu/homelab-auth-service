@@ -3,12 +3,16 @@ package ch.furchert.homelab.auth.service;
 import ch.furchert.homelab.auth.dto.CreateUserRequest;
 import ch.furchert.homelab.auth.dto.ResetPasswordRequest;
 import ch.furchert.homelab.auth.dto.UpdateUserRequest;
+import ch.furchert.homelab.auth.dto.UserPage;
 import ch.furchert.homelab.auth.dto.UserResponse;
 import ch.furchert.homelab.auth.entity.Role;
 import ch.furchert.homelab.auth.entity.User;
 import ch.furchert.homelab.auth.exception.ResourceNotFoundException;
 import ch.furchert.homelab.auth.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -20,6 +24,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class UserService {
 
     private static final java.util.Set<String> VALID_STATUSES = java.util.Set.of("ACTIVE", "INACTIVE");
+
+    static final int MAX_PAGE_SIZE = 100;
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
@@ -43,6 +49,17 @@ public class UserService {
         user.setRole(role);
 
         return UserResponse.from(userRepository.save(user));
+    }
+
+    public UserPage listUsers(int page, int size) {
+        if (page < 0) {
+            throw new IllegalArgumentException("page must be >= 0");
+        }
+        if (size < 1 || size > MAX_PAGE_SIZE) {
+            throw new IllegalArgumentException("size must be between 1 and " + MAX_PAGE_SIZE);
+        }
+        Page<User> result = userRepository.findAll(PageRequest.of(page, size, Sort.by("id")));
+        return new UserPage(result.map(UserResponse::from).getContent(), page, size, result.getTotalElements());
     }
 
     public UserResponse getUser(Long id, String callerUsername, boolean isAdmin) {
