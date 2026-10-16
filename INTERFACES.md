@@ -515,9 +515,11 @@ The REST API uses **Bearer token authentication** with JWT tokens obtained via O
 | Endpoint | Required Role | Notes |
 |----------|---------------|-------|
 | `GET /users/{id}` | Any authenticated | User can access own profile |
-| All other `/users` endpoints | `ADMIN` | Full CRUD access |
+| All other `/users` endpoints | `ADMIN` | Full CRUD access, incl. the paginated list `GET /users` |
 | All `/clients` endpoints | `ADMIN` **or** `clients:admin` scope | IoT device client lifecycle — see §8 |
 | `GET /login-events` | `login-events:read` scope only (ADMIN gets 403) | Login-event outbox for data-service — see §2 "data-service" |
+
+`GET /users?page=0&size=50` lists users ordered by `id` ascending (`page` zero-based, `size` 1–100, default 50; out-of-range values return `400`). Response: `{ "users": [<UserResponse>…], "page": 0, "size": 50, "totalElements": 7 }` — each entry has the same shape as `GET /users/{id}` (`id`, `username`, `email`, `role`, `status`, `createdAt`, `updatedAt`). The `clients:admin` scope does **not** grant access; a user token with role `ADMIN` is required (furchert-ch `/dashboard/auth` calls it server-side with the signed-in admin's access token).
 
 Deleting a user or setting the user's status to `INACTIVE` revokes the user's authorizations and consents; reactivation restores nothing.
 

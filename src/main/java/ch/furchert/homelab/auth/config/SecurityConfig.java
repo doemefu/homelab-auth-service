@@ -42,6 +42,10 @@ public class SecurityConfig {
         http
                 .securityMatcher("/api/v1/**")
                 .authorizeHttpRequests(auth -> auth
+                        // HEAD is matched explicitly: the GET matcher does not cover it, and MVC
+                        // would serve HEAD from the list handler (Content-Length leaks the page size).
+                        .requestMatchers(HttpMethod.HEAD, "/api/v1/users").hasRole(ADMIN)
+                        .requestMatchers(HttpMethod.GET, "/api/v1/users").hasRole(ADMIN)
                         .requestMatchers(HttpMethod.POST, "/api/v1/users").hasRole(ADMIN)
                         .requestMatchers(HttpMethod.PUT, "/api/v1/users/**").hasRole(ADMIN)
                         .requestMatchers(HttpMethod.DELETE, "/api/v1/users/**").hasRole(ADMIN)

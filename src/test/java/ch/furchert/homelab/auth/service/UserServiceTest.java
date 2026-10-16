@@ -3,6 +3,7 @@ package ch.furchert.homelab.auth.service;
 import ch.furchert.homelab.auth.dto.CreateUserRequest;
 import ch.furchert.homelab.auth.dto.ResetPasswordRequest;
 import ch.furchert.homelab.auth.dto.UpdateUserRequest;
+import ch.furchert.homelab.auth.dto.UserPage;
 import ch.furchert.homelab.auth.dto.UserResponse;
 import ch.furchert.homelab.auth.entity.Role;
 import ch.furchert.homelab.auth.entity.User;
@@ -15,10 +16,15 @@ import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -93,6 +99,35 @@ class UserServiceTest {
         assertThatThrownBy(() -> userService.createUser(request))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Email already registered");
+    }
+
+    @Test
+    void listUsers_returnsPageOrderedById() {
+        Pageable expected = PageRequest.of(1, 10, Sort.by("id"));
+        when(userRepository.findAll(expected)).thenReturn(new PageImpl<>(List.of(existingUser), expected, 11));
+
+        UserPage page = userService.listUsers(1, 10);
+
+        assertThat(page.users()).extracting(UserResponse::username).containsExactly("testuser");
+        assertThat(page.page()).isEqualTo(1);
+        assertThat(page.size()).isEqualTo(10);
+        assertThat(page.totalElements()).isEqualTo(11);
+    }
+
+    @Test
+    void listUsers_withNegativePage_throwsIllegalArgument() {
+        assertThatThrownBy(() -> userService.listUsers(-1, 10))
+                .isInstanceOf(IllegalArgumentException.class);
+        verifyNoInteractions(userRepository);
+    }
+
+    @Test
+    void listUsers_withSizeOutOfRange_throwsIllegalArgument() {
+        assertThatThrownBy(() -> userService.listUsers(0, 0))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> userService.listUsers(0, UserService.MAX_PAGE_SIZE + 1))
+                .isInstanceOf(IllegalArgumentException.class);
+        verifyNoInteractions(userRepository);
     }
 
     @Test
