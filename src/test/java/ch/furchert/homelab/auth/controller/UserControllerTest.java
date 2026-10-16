@@ -99,6 +99,13 @@ class UserControllerTest {
     }
 
     @Test
+    void listUsers_headAsUser_returns403() throws Exception {
+        mockMvc.perform(head("/api/v1/users")
+                        .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_USER"))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void listUsers_unauthenticated_returns401() throws Exception {
         mockMvc.perform(get("/api/v1/users"))
                 .andExpect(status().isUnauthorized());
