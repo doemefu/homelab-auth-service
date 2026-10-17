@@ -493,6 +493,7 @@ For services not using Spring Security, implement JWT validation using the JWKS:
    - `iss` = `https://auth.furchert.ch`
    - `aud` = your client ID
    - `exp` > current time
+   - no `azp` claim. Only ID tokens carry it; never accept an ID token as a bearer token.
 
 ---
 
@@ -508,7 +509,7 @@ For services not using Spring Security, implement JWT validation using the JWKS:
 The REST API uses **Bearer token authentication** with JWT tokens obtained via OIDC flow.
 
 - **Header:** `Authorization: Bearer <token>`
-- **Token Type:** Access token from OIDC token endpoint
+- **Token Type:** Access token from OIDC token endpoint. **ID tokens are rejected** with `401`, recognised by their `azp` claim: Spring Authorization Server sets `azp` on every ID token and on no access token. ID tokens are signed with the same key and carry `role` too, so without this check an ID token, which every OIDC client receives, would act as an access token for its 30 min lifetime.
 
 ### Authorization Rules
 

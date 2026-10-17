@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Security
+
+- The admin REST API (`/api/v1/**`) rejects ID tokens presented as bearer tokens (`401`). ID tokens share the signing key and `role` claim with access tokens, so an admin's ID token could previously call the admin API for its 30 min lifetime (found via doemefu/furchert-ch#79).
+
 ### Breaking
 
 - Direct auth API (`/api/v1/auth/**`) removed — login, refresh, logout, and JWKS are no longer served at these paths. Downstream services must update to the OIDC endpoints.
