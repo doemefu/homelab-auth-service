@@ -481,6 +481,21 @@ spring:
 
 **Important:** For cluster-internal services, use the internal JWKS URI (`http://auth-service.apps.svc.cluster.local:8080/oauth2/jwks`) to avoid external network calls. The public URL (`https://auth.furchert.ch/oauth2/jwks`) can also be used but adds latency.
 
+**Reject ID tokens.** The YAML above only configures Spring's default validators (signature, `exp`/`nbf`, `iss`), and those accept an ID token as well. ID tokens are signed with the same key and carry `role`. Register a validator that refuses tokens with an `azp` claim, as auth-service does for its own API (`AuthorizationServerConfig#jwtDecoder`):
+
+```java
+@Bean
+JwtDecoder jwtDecoder(@Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri}") String jwkSetUri,
+                      @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri}") String issuer) {
+    NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(jwkSetUri).build();
+    OAuth2TokenValidator<Jwt> noIdTokens = jwt -> jwt.hasClaim("azp")
+            ? OAuth2TokenValidatorResult.failure(new OAuth2Error("invalid_token", "ID tokens are not accepted", null))
+            : OAuth2TokenValidatorResult.success();
+    decoder.setJwtValidator(JwtValidators.createDefaultWithValidators(new JwtIssuerValidator(issuer), noIdTokens));
+    return decoder;
+}
+```
+
 ### Custom Validation (Non-Spring)
 
 For services not using Spring Security, implement JWT validation using the JWKS:
@@ -493,6 +508,7 @@ For services not using Spring Security, implement JWT validation using the JWKS:
    - `iss` = `https://auth.furchert.ch`
    - `aud` = your client ID
    - `exp` > current time
+   - no `azp` claim. Only ID tokens carry it; never accept an ID token as a bearer token.
 
 ---
 
@@ -508,7 +524,7 @@ For services not using Spring Security, implement JWT validation using the JWKS:
 The REST API uses **Bearer token authentication** with JWT tokens obtained via OIDC flow.
 
 - **Header:** `Authorization: Bearer <token>`
-- **Token Type:** Access token from OIDC token endpoint
+- **Token Type:** Access token from OIDC token endpoint. **ID tokens are rejected** with `401`, recognised by their `azp` claim: Spring Authorization Server sets `azp` on every ID token and on no access token. ID tokens are signed with the same key and carry `role` too, so without this check an ID token, which every OIDC client receives, would act as an access token for its 30 min lifetime.
 
 ### Authorization Rules
 

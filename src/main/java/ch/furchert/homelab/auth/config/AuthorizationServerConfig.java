@@ -5,6 +5,7 @@ import ch.furchert.homelab.auth.entity.User;
 import ch.furchert.homelab.auth.repository.UserRepository;
 import ch.furchert.homelab.auth.security.AuditingAuthorizationConsentService;
 import ch.furchert.homelab.auth.security.ClientAuthorizationRequestValidator;
+import ch.furchert.homelab.auth.security.IdTokenRejectingValidator;
 import ch.furchert.homelab.auth.security.OidcUserInfoMapper;
 import ch.furchert.homelab.auth.security.ResourceIndicatorPolicy;
 import ch.furchert.homelab.auth.security.ResourceIndicatorTokenRequestGuard;
@@ -39,6 +40,7 @@ import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.JwtException;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationConsentService;
@@ -218,9 +220,16 @@ public class AuthorizationServerConfig {
         return decoder;
     }
 
+    /**
+     * Bearer-token decoder for this server's resource-server endpoints ({@code /api/v1/**}).
+     * Keeps Spring's default validators (type, timestamps) and additionally rejects ID tokens, which carry
+     * the same signature and {@code role} claim as access tokens ({@link IdTokenRejectingValidator}).
+     */
     @Bean
     public JwtDecoder jwtDecoder(JWKSource<SecurityContext> jwkSource) {
-        return OAuth2AuthorizationServerConfiguration.jwtDecoder(jwkSource);
+        NimbusJwtDecoder decoder = (NimbusJwtDecoder) OAuth2AuthorizationServerConfiguration.jwtDecoder(jwkSource);
+        decoder.setJwtValidator(JwtValidators.createDefaultWithValidators(new IdTokenRejectingValidator()));
+        return decoder;
     }
 
     /**
