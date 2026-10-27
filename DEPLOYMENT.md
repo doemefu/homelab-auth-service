@@ -187,12 +187,7 @@ kubectl -n apps exec postgresql-0 -c postgresql -- psql -U postgres -d homelabdb
 # expected: sso
 ```
 
-**Allowlist change:** change the SOPS value, run playbook 59, restart the pod. No SQL. The allowlist is
-checked on authorization requests only, never on refresh (`ClientUserAllowlist`): removing a user does
-**not** end access they already have — their refresh token keeps minting club access tokens. To end it,
-also revoke that user's club authorizations (see "Revoke the authorizations and the consent" below), or
-remove their subject from the club MCP server's allowlist (`club_mcp_allowed_subjects` /
-`mcp_limits.allowed_subjects` in club-assistant, D67), which refuses their tokens at the server.
+**Allowlist change:** change the SOPS value, run playbook 59, restart the pod. No SQL.
 
 **Login refused** (`access_denied` after a successful login): log lines never name users.
 Compare the SOPS allowlist value with the stored usernames:
