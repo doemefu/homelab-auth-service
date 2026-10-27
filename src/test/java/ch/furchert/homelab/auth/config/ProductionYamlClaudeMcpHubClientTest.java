@@ -84,7 +84,7 @@ class ProductionYamlClaudeMcpHubClientTest {
                 .load("y", new FileSystemResource("src/main/resources/application.yaml"))
                 .forEach(environment.getPropertySources()::addLast);
         OidcClientProperties oidc = Binder.get(environment).bind("app.oidc", OidcClientProperties.class).get();
-        oidc.getClients().stream().filter(c -> !"claude-mcp-hub".equals(c.getClientId())).forEach(c -> {
+        oidc.getClients().stream().filter(c -> !List.of("claude-mcp-hub", "claude-club-mcp").contains(c.getClientId())).forEach(c -> {
             assertThat(c.getClientAuthenticationMethods()).as(c.getClientId()).containsExactly("client_secret_basic");
             assertThat(c.isRequireAuthorizationConsent()).as(c.getClientId()).isFalse();
             assertThat(c.isReuseRefreshTokens()).as(c.getClientId()).isTrue();

@@ -18,7 +18,7 @@ spec:
       containers:
         - name: auth-service
           # Image tag is managed by Flux CD image automation.
-          image: ghcr.io/doemefu/homelab-auth-service:main-20261022T082859 # {"$imagepolicy": "flux-system:auth-service"}
+          image: ghcr.io/doemefu/homelab-auth-service:main-20261027T202354 # {"$imagepolicy": "flux-system:auth-service"}
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
@@ -112,6 +112,20 @@ spec:
                 secretKeyRef:
                   name: homelab-auth-secrets
                   key: claude-mcp-hub-allowed-users # auth-service username(s), exact spelling
+                  optional: true
+            # Club-assistant MCP connector client (club-assistant D67). Optional ON PURPOSE, exactly like
+            # the hub's pair above. Read at start-up: restart after a change.
+            - name: CLAUDE_CLUB_MCP_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: homelab-auth-secrets
+                  key: claude-club-mcp-client-secret # value = {bcrypt}<cost-10 hash> via SOPS
+                  optional: true
+            - name: CLAUDE_CLUB_MCP_ALLOWED_USERS
+              valueFrom:
+                secretKeyRef:
+                  name: homelab-auth-secrets
+                  key: claude-club-mcp-allowed-users # auth-service username(s), exact spelling
                   optional: true
           volumeMounts:
             - name: rsa-keys

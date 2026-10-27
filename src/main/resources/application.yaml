@@ -123,6 +123,27 @@ app:
         # Empty or unset = every authorization request for this client is rejected.
         restrict-to-allowed-users: true
         allowed-users: "${CLAUDE_MCP_HUB_ALLOWED_USERS:}"
+      - client-id: claude-club-mcp
+        # claude.ai custom connector for the club-assistant MCP server (club-assistant D67). Same
+        # shape and same OPTIONAL/fail-closed behaviour as claude-mcp-hub: a blank secret means the
+        # seeder skips this client; an empty allowlist rejects every authorization request.
+        # When set: {bcrypt} value, cost 10, created by the owner.
+        client-secret: "${CLAUDE_CLUB_MCP_CLIENT_SECRET:}"
+        redirect-uris:
+          - https://claude.ai/api/mcp/auth_callback
+          - https://claude.com/api/mcp/auth_callback
+        scopes: [ "club:read" ]
+        grant-types: [ authorization_code, refresh_token ]
+        client-authentication-methods: [ client_secret_basic, client_secret_post ]
+        reuse-refresh-tokens: false
+        require-authorization-consent: true
+        access-token-time-to-live: 10m
+        # Tokens are for the club MCP server only (typ at+jwt, this audience, client_id claim, no role).
+        access-token-audience: https://club-mcp.furchert.ch/mcp
+        allowed-resources: [ https://club-mcp.furchert.ch/mcp ]
+        # Fail-closed owner-only check: exact, case-sensitive usernames, comma-separated.
+        restrict-to-allowed-users: true
+        allowed-users: "${CLAUDE_CLUB_MCP_ALLOWED_USERS:}"
 
   # Login-event outbox (NM-4, docs/060 §7.6). Disabled unless LOGIN_EVENT_HMAC_KEY (>= 32 chars)
   # and DATA_SERVICE_CLIENT_SECRET are both set. Other settings default in LoginEventProperties.
