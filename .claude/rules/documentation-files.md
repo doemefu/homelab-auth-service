@@ -1,3 +1,6 @@
+---
+paths: ["**/*.md"]
+---
 # Documentation Files — Purpose & Owner
 
 When making changes, update the relevant file(s) — the `doc-auditor` subagent (Phase 6) identifies what needs updating.

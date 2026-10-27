@@ -1,10 +1,6 @@
 # CLAUDE.md — homelab-auth-service
 
-> **Session start:** Read `.claude/memory/MEMORY.md` completely. The topmost entry shows the current state. If there is an entry with `status: in_progress`, read the linked worklog and ask the user: *"I see we were interrupted at [SLUG]. Continue?"* — before doing anything else.
-
-> **After each completed change:** Insert a new block **at the top** of `.claude/memory/MEMORY.md`. The file grows top-down — newest entries always visible first.
-
-> `.claude/memory/` and `.claude/worklogs/` are gitignored — local-only; cross-check `git log` and GitHub when they look stale.
+> In-progress worklogs are listed at session start by the `homelab-workflow` plugin; start work with `/homelab-workflow:start-task`. Durable facts go to auto memory. `.claude/worklogs/` is gitignored (local-only); cross-check `git log` and GitHub when it looks stale.
 
 ## Service Overview
 
@@ -31,7 +27,7 @@ device-service and furchert-ch consume tokens issued by this service — device-
 - Do **not** log passwords, tokens, or secrets in any form
 - Do **not** introduce new dependencies without explicit user approval
 - Commit, push and open PRs on feature branches without asking. Merging PRs is always the user's. Rolling out changes the user has already merged needs no extra go; force-pushes, playbook runs and other cluster mutations need an explicit go. SOPS files are never read or edited by Claude — the user edits them.
-- Before any merge, wait for the Copilot review and fix or answer every comment (see `.claude/rules/workflow.md` Phase 5).
+- Before any merge, wait for the Copilot review and fix or answer every comment (`/homelab-workflow:review-gate`).
 - All comments and documentation in **English**
 - Minimize diff size: no drive-by refactors
 
@@ -55,17 +51,7 @@ device-service and furchert-ch consume tokens issued by this service — device-
 
 ## Agent Team
 
-Seven project-level agents in `.claude/agents/` handle bigger implementations.
-
-| Agent | Model | Role |
-|-------|-------|------|
-| `architect` | opus | Writes contract specs for changes that affect other services — into `INTERFACES.md`, or `../docs/` for cross-repo specs — before implementation begins |
-| `implementer` | sonnet | Implements the plan: Java/Spring Boot code, Flyway migrations, tests |
-| `reviewer` | opus | Reviews implemented code for security and contract compliance against `INTERFACES.md` |
-| `documenter` | sonnet | Keeps `docs/PLAN.md`, `CLAUDE.md`, and `README.md` accurate as work lands |
-| `devops` | sonnet | Verifies K8s manifests and cluster health after deploys (read-only `kubectl`) |
-| `plan-reviewer` | (inherit) | Phase 3 review — defects and architectural soundness of the plan |
-| `doc-auditor` | (inherit) | Phase 6 doc audit — checks README/DEPLOYMENT/CONTRIBUTING/CHANGELOG for gaps |
+Agents come from the `homelab-workflow` plugin: `homelab-workflow:<role>` (`architect`, `implementer`, `reviewer`, `documenter`, `devops`, `plan-reviewer`, `doc-auditor`). Repo specifics (contract file `INTERFACES.md`, secrets, consumers, doc targets) live in `.claude/agent-context.md`, one section per role. There are no repo-only agents.
 
 ## Service-Specific Conventions
 
@@ -84,17 +70,31 @@ Seven project-level agents in `.claude/agents/` handle bigger implementations.
 
 ---
 
+## Commands
+
+```bash
+./mvnw clean package              # Build
+./mvnw clean package -DskipTests  # Build without tests
+./mvnw spring-boot:run            # Run locally (port-forward cluster DB first)
+./mvnw test                       # All tests
+./mvnw test -Dtest=ClassName      # Single test class
+./mvnw verify                     # Full build + tests
+docker build -t auth-service .    # Build image
+
+# Cluster access (local dev)
+kubectl port-forward -n apps svc/postgresql 5432:5432  # service is `postgresql`, not `postgres`
+kubectl get nodes -o wide
+kubectl get pods -n apps
+```
+
 ## Process & Conventions
 
-Detailed process rules are in `.claude/rules/` (auto-loaded by Claude Code):
+Workflow, worklog format, plan structure, review gate and the GitHub Project #5 board come from the plugin skills:
+`/homelab-workflow:start-task`, `workflow`, `review-gate`, `project-board`, `cross-repo`.
+
+Repo rules in `.claude/rules/` (path-scoped, auto-loaded by Claude Code):
 
 | Rule file | Covers |
 |-----------|--------|
-| `workflow.md` | 6-phase milestone workflow (includes plan approval checklist) |
-| `worklog-conventions.md` | Worklog location, naming, header, structure |
-| `plan-structure.md` | 8-section plan template |
-| `commands.md` | Build, test, cluster access commands |
-| `code-style-conventions.md` | Java/Spring Boot, Lombok, Flyway, secrets |
-| `review-guidelines.md` | Security, diffs, version pinning, tests |
-| `documentation-files.md` | README, OVERVIEW, INTERFACES, DEPLOYMENT, CONTRIBUTING, CHANGELOG, docs/INDEX, docs/DEVELOPMENT |
-| `github-project.md` | GitHub Project #5 status transitions |
+| `code-style-conventions.md` | Java/Spring Boot, Lombok, Flyway, secrets (Java, SQL, yaml, pom, k8s, Dockerfile) |
+| `documentation-files.md` | README, OVERVIEW, INTERFACES, DEPLOYMENT, CONTRIBUTING, CHANGELOG, docs/INDEX, docs/DEVELOPMENT (`**/*.md`) |
