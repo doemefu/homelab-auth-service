@@ -42,7 +42,6 @@ src/main/resources/keys/
 .env
 *.pem
 ### Claude Code ###
-.claude/settings.json
 .claude/settings.local.json
 .claude/**/.DS_Store
 
@@ -92,3 +91,4 @@ coverage/
 /inspections/
 /.claude/memory/
 /.claude/worklogs/
+/.claude/worktrees/
