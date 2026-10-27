@@ -113,6 +113,20 @@ spec:
                   name: homelab-auth-secrets
                   key: claude-mcp-hub-allowed-users # auth-service username(s), exact spelling
                   optional: true
+            # Club-assistant MCP connector client (club-assistant D67). Optional ON PURPOSE, exactly like
+            # the hub's pair above. Read at start-up: restart after a change.
+            - name: CLAUDE_CLUB_MCP_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: homelab-auth-secrets
+                  key: claude-club-mcp-client-secret # value = {bcrypt}<cost-10 hash> via SOPS
+                  optional: true
+            - name: CLAUDE_CLUB_MCP_ALLOWED_USERS
+              valueFrom:
+                secretKeyRef:
+                  name: homelab-auth-secrets
+                  key: claude-club-mcp-allowed-users # auth-service username(s), exact spelling
+                  optional: true
           volumeMounts:
             - name: rsa-keys
               mountPath: /etc/secrets

@@ -111,9 +111,29 @@ public abstract class AbstractIntegrationTest {
         registry.add("app.oidc.clients[6].allowed-resources[0]", () -> "https://mcp.furchert.ch/mcp");
         registry.add("app.oidc.clients[6].restrict-to-allowed-users", () -> "true");
         registry.add("app.oidc.clients[6].allowed-users", () -> "hubowner, hubadmin");
+
+        // clients[7]: claude-club-mcp — mirrors application.yaml (club-assistant D67); same shape as the hub.
+        registry.add("app.oidc.clients[7].client-id", () -> "claude-club-mcp");
+        registry.add("app.oidc.clients[7].client-secret", () -> CLUB_SECRET_HASH);
+        registry.add("app.oidc.clients[7].redirect-uris[0]", () -> "https://claude.ai/api/mcp/auth_callback");
+        registry.add("app.oidc.clients[7].redirect-uris[1]", () -> "https://claude.com/api/mcp/auth_callback");
+        registry.add("app.oidc.clients[7].scopes[0]", () -> "club:read");
+        registry.add("app.oidc.clients[7].grant-types[0]", () -> "authorization_code");
+        registry.add("app.oidc.clients[7].grant-types[1]", () -> "refresh_token");
+        registry.add("app.oidc.clients[7].client-authentication-methods[0]", () -> "client_secret_basic");
+        registry.add("app.oidc.clients[7].client-authentication-methods[1]", () -> "client_secret_post");
+        registry.add("app.oidc.clients[7].reuse-refresh-tokens", () -> "false");
+        registry.add("app.oidc.clients[7].require-authorization-consent", () -> "true");
+        registry.add("app.oidc.clients[7].access-token-time-to-live", () -> "10m");
+        registry.add("app.oidc.clients[7].access-token-audience", () -> "https://club-mcp.furchert.ch/mcp");
+        registry.add("app.oidc.clients[7].allowed-resources[0]", () -> "https://club-mcp.furchert.ch/mcp");
+        registry.add("app.oidc.clients[7].restrict-to-allowed-users", () -> "true");
+        registry.add("app.oidc.clients[7].allowed-users", () -> "clubowner");
     }
 
     // Throwaway test secret "hub-secret"; cost 10 and revision $2y$ like the production value.
     static final String HUB_SECRET_HASH = "{bcrypt}" + new BCryptPasswordEncoder(
             BCryptPasswordEncoder.BCryptVersion.$2Y, 10).encode("hub-secret");
+    static final String CLUB_SECRET_HASH = "{bcrypt}" + new BCryptPasswordEncoder(
+            BCryptPasswordEncoder.BCryptVersion.$2Y, 10).encode("club-secret");
 }

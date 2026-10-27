@@ -72,7 +72,7 @@ class ExistingClientsUnchangedGateTest extends AbstractIntegrationTest {
             assertThat(c.getTokenSettings().isReuseRefreshTokens()).as(id).isTrue();
             assertThat(c.getTokenSettings().getAccessTokenTimeToLive()).as(id).isEqualTo(Duration.ofMinutes(15));
             assertThat(c.getClientSettings().getSettings()).as(id)
-                    .doesNotContainKey(OidcClientProperties.AUDIENCE_BOUND_SETTING);   // marker: hub only
+                    .doesNotContainKey(OidcClientProperties.AUDIENCE_BOUND_SETTING);   // marker: MCP clients only
         }
     }
 
@@ -154,6 +154,6 @@ class ExistingClientsUnchangedGateTest extends AbstractIntegrationTest {
         assertThat(jdbc.queryForObject("""
                 SELECT COUNT(*) FROM oauth2_authorization_consent c
                 JOIN oauth2_registered_client r ON r.id = c.registered_client_id
-                WHERE r.client_id <> 'claude-mcp-hub'""", Integer.class)).isZero();
+                WHERE r.client_id NOT IN ('claude-mcp-hub', 'claude-club-mcp')""", Integer.class)).isZero();
     }
 }

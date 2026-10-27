@@ -22,7 +22,7 @@ Comprehensive deployment and operational guidance for auth-service.
 |--------|------|---------|
 | `homelab-db-credentials` | `username`, `password` | Database |
 | `homelab-auth-rsa-keys` | `private.pem`, `public.pem` | JWT signing keys |
-| `homelab-auth-secrets` | Client secrets for Grafana, Home Assistant, device-service, n8n, LiteLLM; optional `claude-mcp-hub-client-secret`, `claude-mcp-hub-allowed-users` | OIDC client auth |
+| `homelab-auth-secrets` | Client secrets for Grafana, Home Assistant, device-service, n8n, LiteLLM; optional `claude-mcp-hub-client-secret`, `claude-mcp-hub-allowed-users`, `claude-club-mcp-client-secret`, `claude-club-mcp-allowed-users` | OIDC client auth |
 | `sentry-dsn` | `dsn` | Error tracking (optional) |
 
 ### Cloudflare Tunnel
@@ -313,6 +313,64 @@ apart; the Secret keys go before the SQL because a pod restart with the secret s
 present would seed the client again. Access tokens issued before step 4 stay valid until
 `exp` (at most 10 minutes), but the hub refuses them after step 1.
 
+### Enable, change or revoke the claude-club-mcp client
+
+The club-assistant MCP connector (club-assistant D67, `club:read`, audience
+`https://club-mcp.furchert.ch/mcp`) is a second client of the same kind as `claude-mcp-hub`; see
+`INTERFACES.md` §2 "claude-club-mcp". Everything in the hub sections above applies with the client id,
+SOPS variables, Secret keys and env vars renamed as below. Every step is an owner action or needs the
+owner's go.
+
+1. The owner sets the SOPS variables `auth_service_claude_club_mcp_client_secret` (`{bcrypt}` hash,
+   cost 10, same format as the hub's) and `auth_service_claude_club_mcp_allowed_users` (comma-separated
+   auth-service usernames, exact spelling; both or none), then runs playbook 59 from a checkout on
+   `main`. The playbook must already write the Secret keys `claude-club-mcp-client-secret` and
+   `claude-club-mcp-allowed-users` (infrastructure change of the same milestone); without them the
+   client is silently not seeded.
+2. Restart: `kubectl -n apps delete pod -l app=auth-service`.
+3. Verify: `kubectl -n apps logs -l app=auth-service --tail=400 --request-timeout=10s | grep -E "claude-club-mcp"`
+   expects `Seeded SSO client 'claude-club-mcp'` and no "has no allowed users configured" warning.
+4. claude.ai: Settings, Connectors, add a custom connector with the club MCP URL
+   `https://club-mcp.furchert.ch/mcp`, open "Advanced settings" and enter the OAuth client id
+   `claude-club-mcp` and the plaintext secret (the plaintext exists only there; the repository and the
+   cluster hold the hash). Connecting shows the consent page with scope `club:read`.
+
+**Allowlist change:** change the SOPS value, run playbook 59, restart the pod. No SQL.
+
+**Secret rotation:** the seeder never updates an existing row, so change the row and the SOPS variable,
+then remove and re-add the connector in claude.ai:
+```bash
+kubectl -n apps exec -i postgresql-0 -c postgresql -- psql -U postgres -d homelabdb -v ON_ERROR_STOP=1 <<'SQL'
+UPDATE oauth2_registered_client SET client_secret = '<{bcrypt} value>' WHERE client_id = 'claude-club-mcp';
+SQL
+# expected: UPDATE 1
+```
+
+**Revoke the authorizations and the consent** (next refresh gets `400 invalid_grant`; access tokens
+already issued stay valid until `exp`, at most 10 minutes):
+```bash
+kubectl -n apps exec -i postgresql-0 -c postgresql -- psql -U postgres -d homelabdb -v ON_ERROR_STOP=1 <<'SQL'
+BEGIN;
+DELETE FROM oauth2_authorization_consent
+ WHERE registered_client_id = (SELECT id FROM oauth2_registered_client WHERE client_id = 'claude-club-mcp');
+DELETE FROM oauth2_authorization
+ WHERE registered_client_id = (SELECT id FROM oauth2_registered_client WHERE client_id = 'claude-club-mcp');
+COMMIT;
+SQL
+```
+Further levels: remove the subject from the club MCP server's own subject allowlist (independent of this
+service), or remove the client entirely.
+
+### Remove or rename the claude-club-mcp client
+
+Same procedure as "Remove or rename the claude-mcp-hub client" with these differences: skip the hub kill
+switch (step 1) and instead empty the club MCP server's subject allowlist and restart it; the SOPS
+variables are `auth_service_claude_club_mcp_client_secret` and `auth_service_claude_club_mcp_allowed_users`
+(remove both); the Secret keys are `claude-club-mcp-client-secret` and `claude-club-mcp-allowed-users`;
+the SQL targets `client_id = 'claude-club-mcp'`. Required before removing or renaming its
+`application.yaml` entry or its `access-token-audience`, once the client has been seeded (the
+audience-bound marker makes a seeded row fail closed without its configuration).
+
 **Removing any other client row by hand:** delete its consents and authorizations first,
 then the row, as in step 4.
 
@@ -367,6 +425,8 @@ Common: Insufficient CPU/memory, nodeSelector mismatch, image not available for 
 | `LITELLM_CLIENT_SECRET` | `homelab-auth-secrets` | Yes | LiteLLM OIDC client secret |
 | `CLAUDE_MCP_HUB_CLIENT_SECRET` | `homelab-auth-secrets` (`claude-mcp-hub-client-secret`) | No | `claude-mcp-hub` client secret, `{bcrypt}` cost 10; blank = client not seeded |
 | `CLAUDE_MCP_HUB_ALLOWED_USERS` | `homelab-auth-secrets` (`claude-mcp-hub-allowed-users`) | No | Usernames allowed to use `claude-mcp-hub`, comma-separated, exact spelling; empty = everyone rejected |
+| `CLAUDE_CLUB_MCP_CLIENT_SECRET` | `homelab-auth-secrets` (`claude-club-mcp-client-secret`) | No | `claude-club-mcp` client secret, `{bcrypt}` cost 10; blank = client not seeded |
+| `CLAUDE_CLUB_MCP_ALLOWED_USERS` | `homelab-auth-secrets` (`claude-club-mcp-allowed-users`) | No | Usernames allowed to use `claude-club-mcp`, comma-separated, exact spelling; empty = everyone rejected |
 | `SENTRY_DSN` | `sentry-dsn` | No | Sentry error tracking |
 
 ---
