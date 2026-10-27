@@ -36,7 +36,7 @@ device-service and furchert-ch consume tokens issued by this service — device-
 | Component | Version |
 |-----------|---------|
 | Java | 25 |
-| Spring Boot | 4.1.1 |
+| Spring Boot | 4.1.2 |
 | Spring Authorization Server | via `spring-boot-starter-oauth2-authorization-server` (Spring Boot 4.1 BOM-managed) |
 | springdoc-openapi | 3.1.1 |
 | Testcontainers BOM | 2.0.5 (project-managed via dependencyManagement import) |
