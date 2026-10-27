@@ -187,7 +187,12 @@ kubectl -n apps exec postgresql-0 -c postgresql -- psql -U postgres -d homelabdb
 # expected: sso
 ```
 
-**Allowlist change:** change the SOPS value, run playbook 59, restart the pod. No SQL.
+**Allowlist change:** change the SOPS value, run playbook 59, restart the pod. No SQL. The allowlist is
+checked on authorization requests only, never on refresh (`ClientUserAllowlist`): removing a user does
+**not** end access they already have — their refresh token keeps minting club access tokens. To end it,
+also revoke that user's club authorizations (see "Revoke the authorizations and the consent" below), or
+remove their subject from the club MCP server's allowlist (`club_mcp_allowed_subjects` /
+`mcp_limits.allowed_subjects` in club-assistant, D67), which refuses their tokens at the server.
 
 **Login refused** (`access_denied` after a successful login): log lines never name users.
 Compare the SOPS allowlist value with the stored usernames:
@@ -329,13 +334,21 @@ owner's go.
    client is silently not seeded.
 2. Restart: `kubectl -n apps delete pod -l app=auth-service`.
 3. Verify: `kubectl -n apps logs -l app=auth-service --tail=400 --request-timeout=10s | grep -E "claude-club-mcp"`
-   expects `Seeded SSO client 'claude-club-mcp'` and no "has no allowed users configured" warning.
+   expects no "has no allowed users configured" warning. The `Seeded SSO client 'claude-club-mcp'` line appears
+   only on the **first** registration; the seeder skips an existing row (debug log only), so after a later
+   change verify the row instead (read-only):
+   `kubectl -n apps exec postgresql-0 -c postgresql -- psql -U postgres -d homelabdb -c "SELECT client_id, scopes FROM oauth2_registered_client WHERE client_id = 'claude-club-mcp';"`
 4. claude.ai: Settings, Connectors, add a custom connector with the club MCP URL
    `https://club-mcp.furchert.ch/mcp`, open "Advanced settings" and enter the OAuth client id
    `claude-club-mcp` and the plaintext secret (the plaintext exists only there; the repository and the
    cluster hold the hash). Connecting shows the consent page with scope `club:read`.
 
-**Allowlist change:** change the SOPS value, run playbook 59, restart the pod. No SQL.
+**Allowlist change:** change the SOPS value, run playbook 59, restart the pod. No SQL. The allowlist is
+checked on authorization requests only, never on refresh (`ClientUserAllowlist`): removing a user does
+**not** end access they already have — their refresh token keeps minting club access tokens. To end it,
+also revoke that user's club authorizations (see "Revoke the authorizations and the consent" below), or
+remove their subject from the club MCP server's allowlist (`club_mcp_allowed_subjects` /
+`mcp_limits.allowed_subjects` in club-assistant, D67), which refuses their tokens at the server.
 
 **Secret rotation:** the seeder never updates an existing row, so change the row and the SOPS variable,
 then remove and re-add the connector in claude.ai:
