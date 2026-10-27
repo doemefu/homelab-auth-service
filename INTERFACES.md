@@ -60,7 +60,7 @@ All OIDC clients should use the following configuration:
 ### Consent
 
 Clients with `require-authorization-consent: true` show a consent page after login;
-today this is only `claude-mcp-hub`. Every other client signs in without one.
+today these are `claude-mcp-hub` and `claude-club-mcp`. Every other client signs in without one.
 
 - **Storage.** The decision is stored in `oauth2_authorization_consent`: client, username,
   granted scopes, `created_at` (first grant) and `updated_at` (latest decision; Flyway V8).
@@ -413,6 +413,30 @@ empty every authorization request for it is rejected and one WARN is logged at s
 The seeder only creates the row on the first start with a secret; later changes to the
 row (secret rotation, settings) need SQL or a Flyway migration. Allowlist changes need
 only the Secret and a pod restart.
+
+### claude-club-mcp — club-assistant MCP connector (audience-bound tokens)
+
+Second pre-registered client of the same kind as `claude-mcp-hub` (club-assistant D67). Its tokens are for
+the club MCP server only. Registration, owner-only rule, token lifetime, refresh rotation, `resource`
+handling and configuration drift behave exactly as in the section above; only these values differ:
+
+| Setting | Value |
+|---|---|
+| Client id / type | `claude-club-mcp`, confidential |
+| Scopes | `club:read` only (`openid` and the hub scopes are refused with `invalid_scope`) |
+| Token `aud` | exactly `https://club-mcp.furchert.ch/mcp` |
+| Allowed `resource` | `https://club-mcp.furchert.ch/mcp` (the hub URL gives `invalid_target`) |
+| Token `client_id` | `claude-club-mcp`; no `role`, no `device_id`, no ID token; header `typ` `at+jwt` |
+| Owner-only rule | usernames in `CLAUDE_CLUB_MCP_ALLOWED_USERS` (independent of the hub list) |
+
+| Env | Kubernetes Secret key (`homelab-auth-secrets`) | SOPS variable (owner) |
+|---|---|---|
+| `CLAUDE_CLUB_MCP_CLIENT_SECRET` | `claude-club-mcp-client-secret`, value `{bcrypt}` hash with cost 10 | `auth_service_claude_club_mcp_client_secret` |
+| `CLAUDE_CLUB_MCP_ALLOWED_USERS` | `claude-club-mcp-allowed-users`, comma-separated usernames, exact spelling | `auth_service_claude_club_mcp_allowed_users` |
+
+Both env vars are optional and read at start-up, like the hub's. Runbook: `DEPLOYMENT.md`
+"Enable, change or revoke the claude-club-mcp client". Both clients share issuer and JWKS, so isolation
+between the hub and the club server rests on `aud`, `client_id`, scope and each server's subject allowlist.
 
 **Per-client keys in `app.oidc.clients[]`.** Every client can use these keys; the
 defaults keep the behaviour of all other clients unchanged.

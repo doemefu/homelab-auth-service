@@ -52,11 +52,11 @@ class LoginEventOutboxIntegrationTest extends AbstractIntegrationTest {
 
     @DynamicPropertySource
     static void loginEventProperties(DynamicPropertyRegistry registry) {
-        // clients[7]: clients[6] is claude-mcp-hub in AbstractIntegrationTest.
-        registry.add("app.oidc.clients[7].client-id", () -> "data-service");
-        registry.add("app.oidc.clients[7].client-secret", () -> "{noop}data-service-secret");
-        registry.add("app.oidc.clients[7].scopes[0]", () -> "login-events:read");
-        registry.add("app.oidc.clients[7].grant-types[0]", () -> "client_credentials");
+        // clients[8]: clients[6] and clients[7] are claude-mcp-hub and claude-club-mcp in AbstractIntegrationTest.
+        registry.add("app.oidc.clients[8].client-id", () -> "data-service");
+        registry.add("app.oidc.clients[8].client-secret", () -> "{noop}data-service-secret");
+        registry.add("app.oidc.clients[8].scopes[0]", () -> "login-events:read");
+        registry.add("app.oidc.clients[8].grant-types[0]", () -> "client_credentials");
         registry.add("app.login-events.hmac-key", () -> HMAC_KEY);
         // No settle delay in tests; the settle filter itself is covered in settleWindowHidesFreshRows.
         registry.add("app.login-events.settle", () -> "0s");

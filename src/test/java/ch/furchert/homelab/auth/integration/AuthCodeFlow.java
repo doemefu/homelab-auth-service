@@ -49,6 +49,10 @@ final class AuthCodeFlow {
     static final String HUB_CALLBACK = "https://claude.ai/api/mcp/auth_callback";
     static final String HUB_RESOURCE = "https://mcp.furchert.ch/mcp";
     static final String HUB_SCOPE = "mail:read calendar:read";
+    static final String CLUB = "claude-club-mcp";
+    static final String CLUB_SECRET = "club-secret";
+    static final String CLUB_RESOURCE = "https://club-mcp.furchert.ch/mcp";
+    static final String CLUB_SCOPE = "club:read";
 
     record Req(String clientId, String redirectUri, String scope, String resource) {
     }
@@ -178,6 +182,24 @@ final class AuthCodeFlow {
                 ? approveConsent(afterLogin, HUB, "mail:read", "calendar:read").getResponse().getRedirectedUrl()
                 : afterLogin.getResponse().getRedirectedUrl();
         return param(location, "code");
+    }
+
+    String clubCode(Req r, String username, String password, Pkce p) throws Exception {
+        MvcResult afterLogin = authorizeAs(r, username, password, p);
+        String location = afterLogin.getResponse().getStatus() == 200
+                ? approveConsent(afterLogin, CLUB, "club:read").getResponse().getRedirectedUrl()
+                : afterLogin.getResponse().getRedirectedUrl();
+        return param(location, "code");
+    }
+
+    TokenPair clubTokens(String username, String password) throws Exception {
+        Pkce p = pkce();
+        String code = clubCode(new Req(CLUB, HUB_CALLBACK, CLUB_SCOPE, CLUB_RESOURCE), username, password, p);
+        JsonNode body = json(exchangePost(CLUB, CLUB_SECRET, code, HUB_CALLBACK, p, CLUB_RESOURCE)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id_token").doesNotExist())
+                .andReturn());
+        return new TokenPair(body.get("access_token").asString(), body.get("refresh_token").asString());
     }
 
     TokenPair hubTokens(String username, String password) throws Exception {
