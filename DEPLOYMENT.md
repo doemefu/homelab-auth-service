@@ -118,6 +118,18 @@ curl -s https://auth.furchert.ch/.well-known/openid-configuration | jq
 curl -s https://auth.furchert.ch/oauth2/jwks | jq
 ```
 
+### Container hardening and writable paths
+
+The pod runs as uid/gid 100/101 (the image's `appuser`) with `readOnlyRootFilesystem`, all capabilities dropped, no privilege escalation and the `RuntimeDefault` seccomp profile. `/tmp` (disk-backed `emptyDir`, 64Mi) is the only writable path (Tomcat work dirs, `hsperfdata`). The RSA keys are read from the read-only Secret mount `/etc/secrets`; nothing is written there. Anything new that writes to disk (log files, heap dumps) must target `/tmp` or gets a new volume.
+
+After a merge Flux rolls the Deployment out; the startup probe allows 300 s:
+
+```bash
+kubectl -n apps rollout status deploy/auth-service --timeout=400s
+```
+
+If this stalls, revert the change (`git revert` the merge commit on `main`). With one replica the default RollingUpdate gives an effective `maxUnavailable` of 0 (25% rounds down), so the old pod keeps serving while the new one fails to become ready.
+
 ---
 
 ## Health checks & monitoring

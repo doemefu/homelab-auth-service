@@ -4,6 +4,7 @@
 
 ### Security
 
+- The Deployment now enforces a container `securityContext`: non-root uid/gid 100/101, read-only root filesystem (writable `emptyDir` at `/tmp`), no privilege escalation, all capabilities dropped, `RuntimeDefault` seccomp (#105).
 - The admin REST API (`/api/v1/**`) rejects ID tokens presented as bearer tokens (`401`). ID tokens share the signing key and `role` claim with access tokens, so an admin's ID token could previously call the admin API for its 30 min lifetime (found via doemefu/furchert-ch#79).
 
 ### Breaking
