@@ -128,7 +128,7 @@ After a merge Flux rolls the Deployment out; the startup probe allows 300 s:
 kubectl -n apps rollout status deploy/auth-service --timeout=400s
 ```
 
-If this stalls, revert the change (`git revert` the merge commit on `main`). `maxUnavailable` is 0, so the old pod keeps serving while the new one fails to become ready.
+If this stalls, revert the change (`git revert` the merge commit on `main`). With one replica the default RollingUpdate gives an effective `maxUnavailable` of 0 (25% rounds down), so the old pod keeps serving while the new one fails to become ready.
 
 ---
 
