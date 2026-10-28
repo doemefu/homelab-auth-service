@@ -15,10 +15,18 @@ spec:
       labels:
         app: auth-service
     spec:
+      securityContext:
+        # Numeric UID/GID of the image's `appuser`/`appgroup` (alpine `adduser -S`): runAsNonRoot
+        # cannot verify a non-numeric Dockerfile `USER`.
+        runAsNonRoot: true
+        runAsUser: 100
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: auth-service
           # Image tag is managed by Flux CD image automation.
-          image: ghcr.io/doemefu/homelab-auth-service:main-20261027T233555 # {"$imagepolicy": "flux-system:auth-service"}
+          image: ghcr.io/doemefu/homelab-auth-service:main-20261028T074012 # {"$imagepolicy": "flux-system:auth-service"}
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
@@ -127,10 +135,18 @@ spec:
                   name: homelab-auth-secrets
                   key: claude-club-mcp-allowed-users # auth-service username(s), exact spelling
                   optional: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           volumeMounts:
             - name: rsa-keys
               mountPath: /etc/secrets
               readOnly: true
+            # Writable JVM/Tomcat temp dir (tomcat.* work dirs, hsperfdata) for the read-only root fs.
+            - name: tmp
+              mountPath: /tmp
           resources:
             requests:
               cpu: 100m
@@ -161,3 +177,6 @@ spec:
         - name: rsa-keys
           secret:
             secretName: homelab-auth-rsa-keys
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
