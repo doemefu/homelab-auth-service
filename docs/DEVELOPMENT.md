@@ -174,7 +174,7 @@ export N8N_CLIENT_SECRET="{noop}local-dev-secret"
 export LITELLM_CLIENT_SECRET="{noop}local-dev-secret"
 ```
 
-**IMPORTANT:** The `{noop}` prefix is **required**. Spring Security's `DelegatingPasswordEncoder` uses it to select the password encoder. Without it, the stored secret is treated as BCrypt and OIDC client authentication at `/oauth2/token` will fail.
+**IMPORTANT:** A `{id}` prefix is **required**. Spring Security's `DelegatingPasswordEncoder` uses it to select the password encoder, and OIDC client authentication at `/oauth2/token` fails without it. `{noop}` (plaintext) is for local development only and is logged as a WARN at start-up; production uses `{bcrypt}` hashes (DEPLOYMENT.md, "Client secret not stored as {bcrypt}").
 
 ### 5. Run the Service
 
@@ -533,7 +533,7 @@ docker system prune -f
 
 **Problem:** OIDC client authentication fails with "Invalid client credentials"
 
-**Solution:** Ensure your client secret env var includes the `{noop}` prefix (for local dev) or `{bcrypt}` prefix (for hashed secrets). Without the prefix, Spring Security treats the stored value as BCrypt and validation will fail.
+**Solution:** Ensure your client secret env var includes the `{bcrypt}` prefix (production) or `{noop}` (local dev only). Without the prefix, Spring Security treats the stored value as BCrypt and validation will fail.
 
 ---
 
@@ -606,6 +606,8 @@ The project uses GitHub Actions for CI/CD:
 ## Environment Variable Reference
 
 ### Required for Local Development
+
+The `{noop}` examples are local-only; production uses `{bcrypt}` hashes.
 
 | Variable | Purpose | Example |
 |----------|---------|---------|

@@ -73,16 +73,21 @@ openssl genrsa -out private.pem 2048
 openssl rsa -in private.pem -pubout -out public.pem
 kubectl create secret generic homelab-auth-rsa-keys -n apps --from-file=private.pem --from-file=public.pem
 kubectl create secret generic homelab-auth-secrets -n apps \
-  --from-literal=grafana-client-secret="{noop}<secret>" \
-  --from-literal=ha-client-secret="{noop}<secret>" \
-  --from-literal=device-service-client-secret="{noop}<secret>" \
-  --from-literal=n8n-client-secret-authservice="{noop}<secret>" \
-  --from-literal=litellm-client-secret-authservice="{noop}<secret>"
+  --from-literal=grafana-client-secret='{bcrypt}<hash>' \
+  --from-literal=ha-client-secret='{bcrypt}<hash>' \
+  --from-literal=device-service-client-secret='{bcrypt}<hash>' \
+  --from-literal=n8n-client-secret-authservice='{bcrypt}<hash>' \
+  --from-literal=litellm-client-secret-authservice='{bcrypt}<hash>'
 rm private.pem public.pem
 ```
 
+   Each client secret value is `{bcrypt}` plus a cost-10 bcrypt hash of the plaintext the client uses (see "Add new
+   OIDC client"). Single quotes keep the shell from expanding the `$` signs in the hash. Values with another encoding
+   (for example the plaintext `{noop}`) still work but are logged as a WARN at every start (#100).
+
    Optional keys in `homelab-auth-secrets` for the login-event outbox (NM-4, see `INTERFACES.md` §2 "data-service"):
-   `data-service-client-secret` (`{noop}<secret>`) and `login-event-hmac-key` (at least 32 characters, e.g. `openssl rand -hex 32`).
+   `data-service-client-secret` (today `{noop}<secret>` from playbook 59, deprecated and logged as a WARN; target
+   `{bcrypt}` via homelab#154) and `login-event-hmac-key` (at least 32 characters, e.g. `openssl rand -hex 32`).
    Both are wired with `optional: true`. Without them, auth-service starts normally and login-event capture stays off.
    In production these keys come from SOPS through playbook 59.
 
@@ -120,7 +125,7 @@ curl -s https://auth.furchert.ch/oauth2/jwks | jq
 
 ### Container hardening and writable paths
 
-The pod runs as uid/gid 100/101 (the image's `appuser`) with `readOnlyRootFilesystem`, all capabilities dropped, no privilege escalation and the `RuntimeDefault` seccomp profile. `/tmp` (disk-backed `emptyDir`, 64Mi) is the only writable path (Tomcat work dirs, `hsperfdata`). The RSA keys are read from the read-only Secret mount `/etc/secrets`; nothing is written there. Anything new that writes to disk (log files, heap dumps) must target `/tmp` or gets a new volume.
+The pod runs as uid/gid 100/101 (the image's `appuser`) with `readOnlyRootFilesystem`, all capabilities dropped, no privilege escalation and the `RuntimeDefault` seccomp profile. `/tmp` (disk-backed `emptyDir`, 64Mi) is the only writable path (Tomcat work dirs, `hsperfdata`). The RSA keys are read from the read-only Secret mount `/etc/secrets`; nothing is written there. Anything new that writes to disk (log files, heap dumps) must target `/tmp` or gets a new volume. The pod mounts no ServiceAccount token (`automountServiceAccountToken: false`); auth-service never calls the Kubernetes API.
 
 After a merge Flux rolls the Deployment out; the startup probe allows 300 s:
 
@@ -163,11 +168,64 @@ rm private.pem public.pem
 **Note:** All existing tokens become invalid immediately.
 
 ### Add new OIDC client
-1. Generate encoded secret: `{noop}<plaintext>` or `{bcrypt}$2a$...`
-2. Update secret: `kubectl patch secret homelab-auth-secrets -n apps --type merge -p '{"stringData":{"new-client-secret":"{noop}<secret>"}}'`
+1. Generate the encoded secret. Create the plaintext, e.g. `openssl rand -hex 32` (bcrypt uses only the first 72
+   bytes). `htpasswd` prompts for it, so it stays out of the shell history:
+   `printf '{bcrypt}%s\n' "$(htpasswd -nBC 10 "" | tr -d ':\n')"`. The client application gets the plaintext; auth-service gets the `{bcrypt}` value.
+2. Update secret (single quotes, the hash contains `$`): `kubectl patch secret homelab-auth-secrets -n apps --type merge -p '{"stringData":{"new-client-secret":"<{bcrypt} value>"}}'`
 3. Add client config to `application.yaml`
 4. Add env var reference to `k8s/deployment.yaml`
-5. Restart service
+5. Restart service (see "Restart service")
+
+### Client secret not stored as {bcrypt}
+
+At start-up `StaticClientSeeder` logs one WARN per configured SSO client whose secret is not a `{bcrypt}` hash, for
+example the plaintext `{noop}` encoding (#100). The line names the client and where the weak value sits, never the
+value:
+
+```bash
+kubectl -n apps logs -l app=auth-service --tail=-1 --request-timeout=10s | grep "is not a {bcrypt} hash"
+# SSO client 'n8n': client secret (configured value and stored row) is not a {bcrypt} hash; ...
+```
+
+- **configured value:** the env var (Secret key in `homelab-auth-secrets`) is not `{bcrypt}`. A database restore or a
+  reseed would store that value again.
+- **stored row:** `oauth2_registered_client.client_secret` is not `{bcrypt}`. Spring Authorization Server re-encodes a
+  stored secret to `{bcrypt}` on the client's first successful authentication, so this means the client has not
+  authenticated since it was seeded.
+
+Check the encodings without printing any secret characters (only the `{id}` prefix):
+
+```bash
+kubectl -n apps exec postgresql-0 -c postgresql -- psql -U postgres -d homelabdb -tAc \
+  "SELECT client_id, substring(client_secret from '^[{][^}]*[}]') FROM oauth2_registered_client WHERE client_kind = 'sso' ORDER BY client_id"
+```
+
+Fix, per client (owner action; the plaintext the client application uses does not change):
+
+1. Create the `{bcrypt}` value from the client's current plaintext as in "Add new OIDC client" step 1. Hash the
+   plaintext **without** any `{noop}` prefix. Before storing it, check it against the plaintext (`htpasswd -v`
+   prompts and prints `Password for user x correct.`):
+```bash
+f=$(mktemp); printf 'x:%s\n' '<hash without the {bcrypt} prefix>' > "$f"; htpasswd -v "$f" x; rm -f "$f"
+```
+2. Configured value: Grafana and Home Assistant keys are written verbatim by playbook 59 from the owner's encrypted
+   variables `auth_service_grafana_client_secret` / `auth_service_ha_client_secret`; change the variable and run
+   playbook 59 (owner). A direct `kubectl patch` of the key is reverted by the next playbook run. For
+   `device-service`, `n8n`, `litellm`, `furchert-ch` and `data-service` playbook 59 adds the `{noop}` prefix itself
+   and gives the consumer the same variable, so their switch needs the playbook change of homelab#154 first. The
+   consumer keeps the plaintext in its own Secret key.
+3. Stored row (only when the WARN names it): trigger one login or token request of the client. Spring Authorization
+   Server then re-encodes the row with a fresh `{bcrypt}` hash, and a wrong hash cannot be stored. Only for a client
+   that cannot authenticate, update the row by hand (the seeder never updates rows). Quote the heredoc so the shell
+   keeps the `$` signs, and use a value checked in step 1; a wrong value breaks the client until it is corrected:
+```bash
+kubectl -n apps exec -i postgresql-0 -c postgresql -- psql -U postgres -d homelabdb -v ON_ERROR_STOP=1 <<'SQL'
+UPDATE oauth2_registered_client SET client_secret = '<{bcrypt} value>' WHERE client_id = '<client-id>' AND client_kind = 'sso';
+SQL
+# expected: UPDATE 1
+```
+4. Restart (see "Restart service") and check that the WARN line for that client is gone. Then test one login or token
+   request of the client.
 
 ### Enable or change the claude-mcp-hub client
 

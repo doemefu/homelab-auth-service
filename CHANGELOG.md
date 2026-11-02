@@ -4,6 +4,8 @@
 
 ### Security
 
+- `StaticClientSeeder` logs one WARN per SSO client whose configured or stored client secret is not a `{bcrypt}` hash (for example the plaintext `{noop}` encoding). The line names the client and where the value sits, never the value. WARN only: such clients keep working until homelab#154 has moved every client to `{bcrypt}` (#100). Docs no longer recommend `{noop}` outside local development; runbook in `DEPLOYMENT.md`.
+- The pod no longer mounts a ServiceAccount token (`automountServiceAccountToken: false`); auth-service never calls the Kubernetes API (homelab#160).
 - The Deployment now enforces a container `securityContext`: non-root uid/gid 100/101, read-only root filesystem (writable `emptyDir` at `/tmp`), no privilege escalation, all capabilities dropped, `RuntimeDefault` seccomp (#105).
 - The admin REST API (`/api/v1/**`) rejects ID tokens presented as bearer tokens (`401`). ID tokens share the signing key and `role` claim with access tokens, so an admin's ID token could previously call the admin API for its 30 min lifetime (found via doemefu/furchert-ch#79).
 

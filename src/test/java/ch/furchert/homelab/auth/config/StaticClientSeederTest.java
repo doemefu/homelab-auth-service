@@ -47,10 +47,14 @@ class StaticClientSeederTest {
     }
 
     private static RegisteredClient stubClient(String clientId) {
+        return stubClient(clientId, "{noop}stub");
+    }
+
+    private static RegisteredClient stubClient(String clientId, String storedSecret) {
         // Minimal valid RegisteredClient for return values from findByClientId mocks.
         // Uses client_credentials grant to avoid auth_code's redirectUris validation.
         return RegisteredClient.withId("stub-" + clientId).clientId(clientId)
-                .clientSecret("{noop}stub")
+                .clientSecret(storedSecret)
                 .clientAuthenticationMethod(
                         org.springframework.security.oauth2.core.ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
                 .authorizationGrantType(
@@ -204,8 +208,8 @@ class StaticClientSeederTest {
 
     @Test
     void existingSsoRowIsSkippedWithoutWarning(CapturedOutput out) {
-        props.getClients().add(def("grafana", "{noop}gs"));
-        when(repo.findByClientId("grafana")).thenReturn(stubClient("grafana"));
+        props.getClients().add(def("grafana", BCRYPT_CONFIGURED));
+        when(repo.findByClientId("grafana")).thenReturn(stubClient("grafana", BCRYPT_STORED));
         stubKind("grafana", "sso");
         when(jdbcTemplate.queryForObject(any(String.class), eq(Integer.class))).thenReturn(1);
 
@@ -213,6 +217,123 @@ class StaticClientSeederTest {
 
         verify(repo, never()).save(any());
         assertThat(out.getOut()).doesNotContain("WARN");
+    }
+
+    // #100: secrets that are not {bcrypt} hashes are logged as WARN (WARN only until homelab#154 has
+    // migrated every client). The sentinels prove that no part of a secret ever reaches the log.
+    private static final String NOOP_CONFIGURED = "{noop}cfg-sentinel-91f2";
+    private static final String NOOP_STORED = "{noop}row-sentinel-4c7e";
+    private static final String BCRYPT_CONFIGURED = "{bcrypt}$2y$10$cfgHashSentinel0000000000000000000000000000000000000";
+    private static final String BCRYPT_STORED = "{bcrypt}$2y$10$rowHashSentinel0000000000000000000000000000000000000";
+
+    private static void assertNoSecretLogged(CapturedOutput out) {
+        assertThat(out.getAll()).doesNotContain("cfg-sentinel-91f2").doesNotContain("row-sentinel-4c7e")
+                .doesNotContain("cfgHashSentinel").doesNotContain("rowHashSentinel");
+    }
+
+    private static long warnLinesFor(CapturedOutput out, String clientId) {
+        return out.getOut().lines().filter(l -> l.contains("WARN") && l.contains("'" + clientId + "'")).count();
+    }
+
+    @Test
+    void warnsWhenNewClientIsSeededWithNoopSecret(CapturedOutput out) {
+        props.getClients().add(def("n8n", NOOP_CONFIGURED));
+        when(repo.findByClientId("n8n")).thenReturn(null);
+        when(jdbcTemplate.queryForObject(any(String.class), eq(Integer.class))).thenReturn(1);
+
+        seeder.run(mock(ApplicationArguments.class));
+
+        verify(repo).save(any());   // WARN only: the client is still seeded
+        assertThat(warnLinesFor(out, "n8n")).isEqualTo(1);
+        // The configured value is stored verbatim, so both places are named.
+        assertThat(out.getOut()).contains("not a {bcrypt} hash").contains("configured value and stored row");
+        assertNoSecretLogged(out);
+    }
+
+    @Test
+    void warnsWhenExistingRowStoresNoopSecret(CapturedOutput out) {
+        props.getClients().add(def("n8n", BCRYPT_CONFIGURED));
+        when(repo.findByClientId("n8n")).thenReturn(stubClient("n8n", NOOP_STORED));
+        stubKind("n8n", "sso");
+        when(jdbcTemplate.queryForObject(any(String.class), eq(Integer.class))).thenReturn(1);
+
+        seeder.run(mock(ApplicationArguments.class));
+
+        verify(repo, never()).save(any());
+        assertThat(warnLinesFor(out, "n8n")).isEqualTo(1);
+        assertThat(out.getOut()).contains("stored row").doesNotContain("configured value");
+        assertNoSecretLogged(out);
+    }
+
+    @Test
+    void warnsWhenConfiguredSecretIsNoopForExistingBcryptRow(CapturedOutput out) {
+        props.getClients().add(def("furchert-ch", NOOP_CONFIGURED));
+        when(repo.findByClientId("furchert-ch")).thenReturn(stubClient("furchert-ch", BCRYPT_STORED));
+        stubKind("furchert-ch", "sso");
+        when(jdbcTemplate.queryForObject(any(String.class), eq(Integer.class))).thenReturn(1);
+
+        seeder.run(mock(ApplicationArguments.class));
+
+        assertThat(warnLinesFor(out, "furchert-ch")).isEqualTo(1);
+        assertThat(out.getOut()).contains("configured value").doesNotContain("stored row");
+        assertNoSecretLogged(out);
+    }
+
+    @Test
+    void warnsOnceWhenConfiguredAndStoredAreNoop(CapturedOutput out) {
+        props.getClients().add(def("n8n", NOOP_CONFIGURED));
+        when(repo.findByClientId("n8n")).thenReturn(stubClient("n8n", NOOP_STORED));
+        stubKind("n8n", "sso");
+        when(jdbcTemplate.queryForObject(any(String.class), eq(Integer.class))).thenReturn(1);
+
+        seeder.run(mock(ApplicationArguments.class));
+
+        assertThat(warnLinesFor(out, "n8n")).isEqualTo(1);
+        assertThat(out.getOut()).contains("configured value and stored row");
+        assertNoSecretLogged(out);
+    }
+
+    @Test
+    void warnsForOtherNonBcryptEncodings(CapturedOutput out) {
+        props.getClients().add(def("ha", "{MD5}cfg-sentinel-91f2"));
+        when(repo.findByClientId("ha")).thenReturn(null);
+        when(jdbcTemplate.queryForObject(any(String.class), eq(Integer.class))).thenReturn(1);
+
+        seeder.run(mock(ApplicationArguments.class));
+
+        assertThat(warnLinesFor(out, "ha")).isEqualTo(1);
+        assertNoSecretLogged(out);
+    }
+
+    @Test
+    void noWarningForBcryptSecrets(CapturedOutput out) {
+        props.getClients().add(def("grafana", BCRYPT_CONFIGURED));
+        props.getClients().add(def("claude-mcp-hub", BCRYPT_CONFIGURED));
+        when(repo.findByClientId("grafana")).thenReturn(null);
+        when(repo.findByClientId("claude-mcp-hub")).thenReturn(stubClient("claude-mcp-hub", BCRYPT_STORED));
+        stubKind("claude-mcp-hub", "sso");
+        when(jdbcTemplate.queryForObject(any(String.class), eq(Integer.class))).thenReturn(2);
+
+        seeder.run(mock(ApplicationArguments.class));
+
+        verify(repo, times(1)).save(any());
+        assertThat(out.getOut()).doesNotContain("WARN");
+        assertNoSecretLogged(out);
+    }
+
+    @Test
+    void noSecretWarningForRowHeldByAnotherKind(CapturedOutput out) {
+        // A device client holding the id is reported by the existing WARN only; its secret is not ours.
+        props.getClients().add(def("claude-mcp-hub", NOOP_CONFIGURED));
+        when(repo.findByClientId("claude-mcp-hub")).thenReturn(stubClient("claude-mcp-hub", NOOP_STORED));
+        stubKind("claude-mcp-hub", "device");
+        when(jdbcTemplate.queryForObject(any(String.class), eq(Integer.class))).thenReturn(1);
+
+        seeder.run(mock(ApplicationArguments.class));
+
+        assertThat(warnLinesFor(out, "claude-mcp-hub")).isEqualTo(1);
+        assertThat(out.getOut()).doesNotContain("{bcrypt}");
+        assertNoSecretLogged(out);
     }
 
     @Test

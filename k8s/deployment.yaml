@@ -15,6 +15,8 @@ spec:
       labels:
         app: auth-service
     spec:
+      # auth-service never calls the Kubernetes API (homelab#160).
+      automountServiceAccountToken: false
       securityContext:
         # Numeric UID/GID of the image's `appuser`/`appgroup` (alpine `adduser -S`): runAsNonRoot
         # cannot verify a non-numeric Dockerfile `USER`.
@@ -66,7 +68,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: homelab-auth-secrets
-                  # auth-service expects Spring Security encoded secret ({noop}/{bcrypt}).
+                  # auth-service expects a Spring Security encoded secret; production target {bcrypt} (#100).
                   # We keep a dedicated key so n8n can consume the same client secret in raw form
                   # from a different key without the Spring prefix.
                   key: n8n-client-secret-authservice
@@ -74,7 +76,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: homelab-auth-secrets
-                  # auth-service expects Spring Security encoded secret ({noop}/{bcrypt}).
+                  # auth-service expects a Spring Security encoded secret; production target {bcrypt} (#100).
                   # We keep a dedicated key so LiteLLM can consume the same client secret in raw form
                   # from a different key without the Spring prefix.
                   key: litellm-client-secret-authservice
@@ -88,7 +90,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: homelab-auth-secrets
-                  key: furchert-ch-client-secret # value = {noop}<plaintext> via SOPS
+                  key: furchert-ch-client-secret # value today {noop}<plaintext> via SOPS (deprecated, WARN); target {bcrypt} (homelab#154)
             # NM-4 login-event outbox (docs/060 §7.6/§9). Both keys are optional ON PURPOSE:
             # this Deployment is Flux-auto-deployed on merge and auth-service is the sole IdP, so a
             # Secret key that playbook 59 has not created yet must not stop the pod (all SSO down).
@@ -98,7 +100,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: homelab-auth-secrets
-                  key: data-service-client-secret # value = {noop}<plaintext> via SOPS
+                  key: data-service-client-secret # value today {noop}<plaintext> via SOPS (deprecated, WARN); target {bcrypt} (homelab#154)
                   optional: true
             - name: LOGIN_EVENT_HMAC_KEY
               valueFrom:
