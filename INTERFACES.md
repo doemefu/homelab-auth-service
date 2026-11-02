@@ -617,6 +617,7 @@ Production secrets are `{bcrypt}` hashes with cost 10. Any other encoding (for e
 for local development) is accepted but logged as a WARN at every start (#100).
 
 ```bash
+# Plaintext for the client application, e.g.: openssl rand -hex 32  (bcrypt uses only the first 72 bytes)
 # htpasswd prompts for the plaintext, so it stays out of the shell history.
 # The secret value stored in K8s will be: {bcrypt}$2y$10$...
 CLIENT_SECRET_ENCODED="{bcrypt}$(htpasswd -nBC 10 "" | tr -d ':\n')"

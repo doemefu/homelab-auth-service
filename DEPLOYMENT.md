@@ -168,7 +168,8 @@ rm private.pem public.pem
 **Note:** All existing tokens become invalid immediately.
 
 ### Add new OIDC client
-1. Generate the encoded secret. `htpasswd` prompts for the plaintext, so it stays out of the shell history:
+1. Generate the encoded secret. Create the plaintext, e.g. `openssl rand -hex 32` (bcrypt uses only the first 72
+   bytes). `htpasswd` prompts for it, so it stays out of the shell history:
    `printf '{bcrypt}%s\n' "$(htpasswd -nBC 10 "" | tr -d ':\n')"`. The client application gets the plaintext; auth-service gets the `{bcrypt}` value.
 2. Update secret (single quotes, the hash contains `$`): `kubectl patch secret homelab-auth-secrets -n apps --type merge -p '{"stringData":{"new-client-secret":"<{bcrypt} value>"}}'`
 3. Add client config to `application.yaml`
@@ -182,7 +183,7 @@ example the plaintext `{noop}` encoding (#100). The line names the client and wh
 value:
 
 ```bash
-kubectl -n apps logs -l app=auth-service --tail=400 --request-timeout=10s | grep "is not a {bcrypt} hash"
+kubectl -n apps logs -l app=auth-service --tail=-1 --request-timeout=10s | grep "is not a {bcrypt} hash"
 # SSO client 'n8n': client secret (configured value and stored row) is not a {bcrypt} hash; ...
 ```
 
@@ -201,13 +202,22 @@ kubectl -n apps exec postgresql-0 -c postgresql -- psql -U postgres -d homelabdb
 
 Fix, per client (owner action; the plaintext the client application uses does not change):
 
-1. Create the `{bcrypt}` value from the client's current plaintext as in "Add new OIDC client" step 1.
-2. Put that value into the client's key in `homelab-auth-secrets`. Grafana and Home Assistant values are written
-   verbatim by playbook 59. For `device-service`, `n8n`, `litellm`, `furchert-ch` and `data-service` playbook 59 adds
-   the `{noop}` prefix itself and gives the consumer the same variable, so their switch needs the playbook change of
-   homelab#154 first. The consumer keeps the plaintext in its own Secret key.
-3. Only when the WARN names the stored row: update it (the seeder never updates rows). Quote the heredoc so the shell
-   keeps the `$` signs:
+1. Create the `{bcrypt}` value from the client's current plaintext as in "Add new OIDC client" step 1. Hash the
+   plaintext **without** any `{noop}` prefix. Before storing it, check it against the plaintext (`htpasswd -v`
+   prompts and prints `Password for user x correct.`):
+```bash
+f=$(mktemp); printf 'x:%s\n' '<hash without the {bcrypt} prefix>' > "$f"; htpasswd -v "$f" x; rm -f "$f"
+```
+2. Configured value: Grafana and Home Assistant keys are written verbatim by playbook 59 from the owner's encrypted
+   variables `auth_service_grafana_client_secret` / `auth_service_ha_client_secret`; change the variable and run
+   playbook 59 (owner). A direct `kubectl patch` of the key is reverted by the next playbook run. For
+   `device-service`, `n8n`, `litellm`, `furchert-ch` and `data-service` playbook 59 adds the `{noop}` prefix itself
+   and gives the consumer the same variable, so their switch needs the playbook change of homelab#154 first. The
+   consumer keeps the plaintext in its own Secret key.
+3. Stored row (only when the WARN names it): trigger one login or token request of the client. Spring Authorization
+   Server then re-encodes the row with a fresh `{bcrypt}` hash, and a wrong hash cannot be stored. Only for a client
+   that cannot authenticate, update the row by hand (the seeder never updates rows). Quote the heredoc so the shell
+   keeps the `$` signs, and use a value checked in step 1; a wrong value breaks the client until it is corrected:
 ```bash
 kubectl -n apps exec -i postgresql-0 -c postgresql -- psql -U postgres -d homelabdb -v ON_ERROR_STOP=1 <<'SQL'
 UPDATE oauth2_registered_client SET client_secret = '<{bcrypt} value>' WHERE client_id = '<client-id>' AND client_kind = 'sso';

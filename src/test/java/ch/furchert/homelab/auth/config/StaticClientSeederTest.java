@@ -227,7 +227,7 @@ class StaticClientSeederTest {
     private static final String BCRYPT_STORED = "{bcrypt}$2y$10$rowHashSentinel0000000000000000000000000000000000000";
 
     private static void assertNoSecretLogged(CapturedOutput out) {
-        assertThat(out.getOut()).doesNotContain("cfg-sentinel-91f2").doesNotContain("row-sentinel-4c7e")
+        assertThat(out.getAll()).doesNotContain("cfg-sentinel-91f2").doesNotContain("row-sentinel-4c7e")
                 .doesNotContain("cfgHashSentinel").doesNotContain("rowHashSentinel");
     }
 
@@ -245,7 +245,8 @@ class StaticClientSeederTest {
 
         verify(repo).save(any());   // WARN only: the client is still seeded
         assertThat(warnLinesFor(out, "n8n")).isEqualTo(1);
-        assertThat(out.getOut()).contains("not a {bcrypt} hash").contains("configured value");
+        // The configured value is stored verbatim, so both places are named.
+        assertThat(out.getOut()).contains("not a {bcrypt} hash").contains("configured value and stored row");
         assertNoSecretLogged(out);
     }
 

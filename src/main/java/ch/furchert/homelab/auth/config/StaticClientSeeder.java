@@ -80,7 +80,8 @@ public class StaticClientSeeder implements ApplicationRunner {
                 }
                 continue;
             }
-            warnIfNotBcrypt(def.getClientId(), !isBcrypt(def.getClientSecret()), false);
+            boolean configuredWeak = !isBcrypt(def.getClientSecret());
+            warnIfNotBcrypt(def.getClientId(), configuredWeak, configuredWeak);   // stored verbatim below
             RegisteredClient client = buildRegisteredClient(def);
             registeredClientRepository.save(client);
             seeded++;
