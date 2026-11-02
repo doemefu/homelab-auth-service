@@ -127,7 +127,7 @@ export N8N_CLIENT_SECRET="{noop}local-dev-secret"
 export LITELLM_CLIENT_SECRET="{noop}local-dev-secret"
 ```
 
-**IMPORTANT:** The `{noop}` prefix is required for Spring Security's `DelegatingPasswordEncoder`.
+**IMPORTANT:** A Spring Security `{id}` prefix is required for `DelegatingPasswordEncoder`. `{noop}` (plaintext) is for local development only and is logged as a WARN; production uses `{bcrypt}` hashes (DEPLOYMENT.md, "Client secret not stored as {bcrypt}").
 
 ### 5. Run the Service
 
@@ -179,7 +179,7 @@ To exercise the full OIDC login flow locally:
    ./mvnw spring-boot:run
    ```
 
-   > The `{noop}` prefix is required: Spring Security's `DelegatingPasswordEncoder` uses it to select the password encoder. Without the prefix, the stored secret is treated as BCrypt and OIDC client authentication at `/oauth2/token` will fail.
+   > A `{id}` prefix is required: Spring Security's `DelegatingPasswordEncoder` uses it to select the password encoder, and OIDC client authentication at `/oauth2/token` fails without it. `{noop}` is for local development only (logged as a WARN); production uses `{bcrypt}`.
 
 3. Open `http://localhost:8080/login` in your browser. You should see the login page.
 
@@ -232,7 +232,7 @@ git rebase origin/main
 kubectl get pods -n apps -l app=auth-service
 kubectl logs -n apps deployment/auth-service --tail=50 -f
 kubectl rollout status deployment/auth-service -n apps
-kubectl rollout restart deployment/auth-service -n apps
+kubectl -n apps delete pod -l app=auth-service   # restart; not rollout restart (Flux reverts it, DEPLOYMENT.md)
 kubectl exec -n apps deploy/auth-service -it -- /bin/sh
 ```
 
@@ -263,7 +263,7 @@ SELECT * FROM flyway_schema_history_auth ORDER BY installed_rank;
 | Tests fail with `NoSuchBeanDefinitionException: SecurityConfig` | Add `@Import(SecurityConfig.class)` to test |
 | `@WithMockUser` doesn't work for JWT endpoints | Use `SecurityMockMvcRequestPostProcessors.jwt()` |
 | Integration tests fail with connection refused | Ensure Docker is running, `docker system prune -f` then retry |
-| OIDC client auth fails with "Invalid client credentials" | Ensure secret has `{noop}` or `{bcrypt}` prefix |
+| OIDC client auth fails with "Invalid client credentials" | Ensure the secret has a `{bcrypt}` prefix (`{noop}` for local development only) |
 | "Found non-empty schema but no history table" | Use `FLYWAY_BASELINE_ON_MIGRATE=true` and `FLYWAY_BASELINE_VERSION=4` |
 | Flyway checksum mismatch | Restore original migration file |
 

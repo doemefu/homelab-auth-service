@@ -58,7 +58,7 @@ auth-service (this service)
 
 - **Password Hashing:** BCrypt with automatic encoding detection
 - **Token Security:** RSA-2048 signed JWTs with configurable expiry
-- **OIDC Client Secrets:** Supports `{noop}` (plaintext) and `{bcrypt}` (hashed) prefixes
+- **OIDC Client Secrets:** `{bcrypt}` hashes in production; other encodings such as `{noop}` (plaintext, local development) are accepted but logged as a WARN at start-up
 - **Session Management:** Stateful sessions for OIDC flow, stateless JWT for API
 - **CSRF Protection:** Enabled for form-based login, disabled for API endpoints
 
@@ -210,7 +210,7 @@ and no ID token. See `INTERFACES.md` §2 "claude-mcp-hub".
 All OIDC clients are configured in `application.yaml` under `app.oidc.clients`. Each client requires:
 
 - `client-id`: Unique identifier
-- `client-secret`: Spring Security encoded ({noop} or {bcrypt} prefix)
+- `client-secret`: Spring Security encoded, `{bcrypt}` in production (`{noop}` only for local development)
 - `redirect-uris`: List of allowed callback URLs
 - `post-logout-redirect-uris`: Where to redirect after logout
 - `scopes`: List of OIDC scopes (typically `openid`, `profile`, `email`)

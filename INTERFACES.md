@@ -336,7 +336,7 @@ older than 72 h. Privacy: log lines never contain IPs, usernames or user agents,
 
 | Env | Kubernetes Secret key (`homelab-auth-secrets`) | SOPS variable (owner) |
 |---|---|---|
-| `DATA_SERVICE_CLIENT_SECRET` | `data-service-client-secret`, value `{noop}<plaintext>` | `auth_service_data_service_client_secret` (data-service uses the plain value) |
+| `DATA_SERVICE_CLIENT_SECRET` | `data-service-client-secret`, value `{noop}<plaintext>` (deprecated, logged as a WARN; target `{bcrypt}` via homelab#154) | `auth_service_data_service_client_secret` (data-service uses the plain value) |
 | `LOGIN_EVENT_HMAC_KEY` | `login-event-hmac-key`, at least 32 characters, e.g. `openssl rand -hex 32` | `auth_service_login_event_hmac_key` |
 
 Both env vars are **optional**, and `k8s/deployment.yaml` wires them with
@@ -613,20 +613,13 @@ To add a new OIDC client to auth-service:
 
 ### Step 1: Generate Client Secret
 
-Choose one encoding method:
+Production secrets are `{bcrypt}` hashes with cost 10. Any other encoding (for example the plaintext `{noop}`, fine
+for local development) is accepted but logged as a WARN at every start (#100).
 
-**Option A: Plaintext (homelab convention)**
 ```bash
-# The secret value stored in K8s will be: {noop}<your-secret>
-CLIENT_SECRET_ENCODED="{noop}my-very-secure-secret"
-```
-
-**Option B: BCrypt hashed (more secure)**
-```bash
-# Generate BCrypt hash
-HASH=$(htpasswd -bnBC 12 "" "my-very-secure-secret" | tr -d ':\n')
-# The secret value stored in K8s will be: {bcrypt}$2a$12$...
-CLIENT_SECRET_ENCODED="{bcrypt}${HASH}"
+# htpasswd prompts for the plaintext, so it stays out of the shell history.
+# The secret value stored in K8s will be: {bcrypt}$2y$10$...
+CLIENT_SECRET_ENCODED="{bcrypt}$(htpasswd -nBC 10 "" | tr -d ':\n')"
 ```
 
 ### Step 2: Create/Update K8s Secret
@@ -674,8 +667,9 @@ env:
 ### Step 5: Restart Service
 
 ```bash
-kubectl rollout restart deployment/auth-service -n apps
-kubectl rollout status deployment/auth-service -n apps
+# Not `kubectl rollout restart`: Flux reverts it (DEPLOYMENT.md, "Restart service").
+kubectl -n apps delete pod -l app=auth-service
+kubectl -n apps get pods -l app=auth-service
 ```
 
 ### Step 6: Configure Client Application
@@ -705,7 +699,7 @@ http://auth-service.apps.svc.cluster.local:8080
 
 ### Service Account Requirements
 
-No special ServiceAccount is required. The auth-service does not use network policies.
+No special ServiceAccount is required, and the pod mounts no ServiceAccount token (`automountServiceAccountToken: false`). The auth-service does not use network policies.
 
 ---
 

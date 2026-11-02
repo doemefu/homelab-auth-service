@@ -36,7 +36,7 @@ app:
       allowed-scopes: [ mqtt:pub, mqtt:sub ]
     clients:
       - client-id: grafana
-        # The env var must include the Spring Security {id} prefix, e.g. "{noop}secret" or "{bcrypt}$2a$...".
+        # The env var must include the Spring Security {id} prefix; production: "{bcrypt}$2y$10$..." (other encodings log a WARN, #100).
         client-secret: "${GRAFANA_CLIENT_SECRET}"
         redirect-uris:
           - https://grafana.furchert.ch/login/generic_oauth
@@ -44,7 +44,7 @@ app:
           - https://grafana.furchert.ch
         scopes: [ openid, profile, email ]
       - client-id: homeassistant
-        # The env var must include the Spring Security {id} prefix, e.g. "{noop}secret" or "{bcrypt}$2a$...".
+        # The env var must include the Spring Security {id} prefix; production: "{bcrypt}$2y$10$..." (other encodings log a WARN, #100).
         client-secret: "${HA_CLIENT_SECRET}"
         redirect-uris:
           - https://ha.furchert.ch/auth/oidc/callback
@@ -52,7 +52,7 @@ app:
           - https://ha.furchert.ch
         scopes: [ openid, profile, email ]
       - client-id: device-service
-        # The env var must include the Spring Security {id} prefix, e.g. "{noop}secret" or "{bcrypt}$2a$...".
+        # The env var must include the Spring Security {id} prefix; production: "{bcrypt}$2y$10$..." (other encodings log a WARN, #100).
         client-secret: "${DEVICE_SERVICE_CLIENT_SECRET}"
         redirect-uris:
           - https://device.furchert.ch/login/oauth2/code/device-service
@@ -65,7 +65,7 @@ app:
         # on the auth_code endpoint, so requireProofKey=true is harmless for the S2S half.
         grant-types: [ authorization_code, refresh_token, client_credentials ]
       - client-id: n8n
-        # The env var must include the Spring Security {id} prefix, e.g. "{noop}secret" or "{bcrypt}$2a$...".
+        # The env var must include the Spring Security {id} prefix; production: "{bcrypt}$2y$10$..." (other encodings log a WARN, #100).
         client-secret: "${N8N_CLIENT_SECRET}"
         redirect-uris:
           - https://n8n.furchert.ch/rest/sso/oidc/callback
@@ -73,7 +73,7 @@ app:
           - https://n8n.furchert.ch
         scopes: [ openid, profile, email ]
       - client-id: litellm
-        # The env var must include the Spring Security {id} prefix, e.g. "{noop}secret" or "{bcrypt}$2a$...".
+        # The env var must include the Spring Security {id} prefix; production: "{bcrypt}$2y$10$..." (other encodings log a WARN, #100).
         client-secret: "${LITELLM_CLIENT_SECRET}"
         redirect-uris:
           - https://ai.furchert.ch/sso/callback
@@ -81,7 +81,7 @@ app:
           - https://ai.furchert.ch
         scopes: [ openid, profile, email ]
       - client-id: furchert-ch
-        # The env var must include the Spring Security {id} prefix, e.g. "{noop}secret" or "{bcrypt}$2a$...".
+        # The env var must include the Spring Security {id} prefix; production: "{bcrypt}$2y$10$..." (other encodings log a WARN, #100).
         client-secret: "${FURCHERT_CH_CLIENT_SECRET}"
         redirect-uris:
           - https://furchert.ch/api/auth/callback/furchert-ch
@@ -98,7 +98,7 @@ app:
         # Pulls the login-event outbox (docs/060 §7.6). OPTIONAL: the empty default keeps the IdP
         # starting when the Secret key does not exist yet; a blank secret means the seeder skips
         # this client and login-event capture stays off (one WARN at startup).
-        # When set, the value must include the Spring Security {id} prefix, e.g. "{noop}secret".
+        # When set, the value must include the Spring Security {id} prefix; production: "{bcrypt}$2y$10$...".
         client-secret: "${DATA_SERVICE_CLIENT_SECRET:}"
         scopes: [ "login-events:read" ]
         grant-types: [ client_credentials ]

@@ -32,9 +32,16 @@ import java.util.UUID;
  * Clients whose secret resolves to blank are skipped (optional clients, see application.yaml).
  * <p>
  * Secret handling: YAML values are passed through verbatim — they MUST already
- * carry a DelegatingPasswordEncoder prefix ({noop}/{bcrypt}/...) per the
- * application.yaml comment on each client. Re-encoding a {bcrypt} value would
- * double-hash and silently break SSO logins.
+ * carry a DelegatingPasswordEncoder prefix per the application.yaml comment on
+ * each client; production values are {bcrypt} hashes. Re-encoding a {bcrypt}
+ * value would double-hash and silently break SSO logins.
+ * <p>
+ * A configured value or a stored row whose secret is not a {bcrypt} hash (e.g. the
+ * plaintext {noop} encoding) is logged as one WARN per client, never with the value
+ * (#100). WARN only: production still configures {noop} for several clients until
+ * homelab#154. Spring Authorization Server re-encodes a non-bcrypt stored secret to
+ * {bcrypt} on that client's first successful authentication, so a stored-row WARN
+ * means the client has not authenticated since it was seeded.
  */
 @Component
 @RequiredArgsConstructor
@@ -56,7 +63,8 @@ public class StaticClientSeeder implements ApplicationRunner {
                 log.info("SSO client '{}' has no client secret configured; not seeding it", def.getClientId());
                 continue;
             }
-            if (registeredClientRepository.findByClientId(def.getClientId()) != null) {
+            RegisteredClient existing = registeredClientRepository.findByClientId(def.getClientId());
+            if (existing != null) {
                 String kind = jdbcTemplate.queryForObject(
                         "SELECT client_kind FROM oauth2_registered_client WHERE client_id = ?",
                         String.class, def.getClientId());
@@ -67,9 +75,12 @@ public class StaticClientSeeder implements ApplicationRunner {
                             def.getClientId());
                 } else {
                     log.debug("SSO client '{}' already present in DB; skipping seed", def.getClientId());
+                    boolean storedWeak = existing.getClientSecret() != null && !isBcrypt(existing.getClientSecret());
+                    warnIfNotBcrypt(def.getClientId(), !isBcrypt(def.getClientSecret()), storedWeak);
                 }
                 continue;
             }
+            warnIfNotBcrypt(def.getClientId(), !isBcrypt(def.getClientSecret()), false);
             RegisteredClient client = buildRegisteredClient(def);
             registeredClientRepository.save(client);
             seeded++;
@@ -86,6 +97,21 @@ public class StaticClientSeeder implements ApplicationRunner {
             log.info("StaticClientSeeder finished: seeded {} new clients of {} configured; total in DB: {}",
                     seeded, properties.getClients().size(), totalCount);
         }
+    }
+
+    private static boolean isBcrypt(String secret) {
+        return secret != null && secret.startsWith("{bcrypt}");
+    }
+
+    /** Logs where a non-bcrypt secret sits; never the secret itself. */
+    private static void warnIfNotBcrypt(String clientId, boolean configuredWeak, boolean storedWeak) {
+        if (!configuredWeak && !storedWeak) {
+            return;
+        }
+        String where = configuredWeak && storedWeak ? "configured value and stored row"
+                : configuredWeak ? "configured value" : "stored row";
+        log.warn("SSO client '{}': client secret ({}) is not a {bcrypt} hash; store a {bcrypt} hash instead "
+                + "(DEPLOYMENT.md, runbook \"Client secret not stored as {bcrypt}\")", clientId, where);
     }
 
     private RegisteredClient buildRegisteredClient(OidcClientProperties.ClientDefinition def) {
