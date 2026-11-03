@@ -14,7 +14,6 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -63,11 +62,7 @@ public class UserService {
     }
 
     public UserResponse getUser(Long id, String callerUsername, boolean isAdmin) {
-        User user = findById(id);
-        if (!isAdmin && !user.getUsername().equals(callerUsername)) {
-            throw new AccessDeniedException("Access denied");
-        }
-        return UserResponse.from(user);
+        return UserResponse.from(findVisible(id, callerUsername, isAdmin));
     }
 
     @Transactional
@@ -121,12 +116,9 @@ public class UserService {
 
     @Transactional
     public void resetPassword(Long id, ResetPasswordRequest request, String callerUsername, boolean isAdmin) {
-        User user = findById(id);
+        User user = findVisible(id, callerUsername, isAdmin);
 
         if (!isAdmin) {
-            if (!user.getUsername().equals(callerUsername)) {
-                throw new AccessDeniedException("Access denied");
-            }
             if (request.currentPassword() == null || request.currentPassword().isBlank()) {
                 throw new IllegalArgumentException("Current password is required");
             }
@@ -142,9 +134,25 @@ public class UserService {
         revokeAuthorizations(user.getUsername());
     }
 
+    /**
+     * For a non-admin caller another user's id answers exactly like an absent id (404, same message), so
+     * an authenticated caller cannot probe which ids exist (#106).
+     */
+    private User findVisible(Long id, String callerUsername, boolean isAdmin) {
+        User user = findById(id);
+        if (!isAdmin && !user.getUsername().equals(callerUsername)) {
+            throw notFound(id);
+        }
+        return user;
+    }
+
+    private static ResourceNotFoundException notFound(Long id) {
+        return new ResourceNotFoundException("User not found: " + id);
+    }
+
     private User findById(Long id) {
         return userRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + id));
+                .orElseThrow(() -> notFound(id));
     }
 
     private void revokeAuthorizations(String principalName) {

@@ -464,6 +464,9 @@ Downstream services validate JWT tokens by:
 
 ### JWKS Endpoint
 
+The signing key's `kid` changes with every key rotation (`APP_JWT_KEY_ID`, DEPLOYMENT.md "RSA key rotation").
+Consumers must select keys by `kid` and refetch the JWKS for an unknown `kid`; never pin `auth-service-v1`.
+
 ```bash
 # Public access
 curl -s https://auth.furchert.ch/oauth2/jwks | jq
@@ -554,7 +557,8 @@ The REST API uses **Bearer token authentication** with JWT tokens obtained via O
 
 | Endpoint | Required Role | Notes |
 |----------|---------------|-------|
-| `GET /users/{id}` | Any authenticated | User can access own profile |
+| `GET /users/{id}` | Any authenticated | Own profile only; another user's id answers `404` exactly like an absent id |
+| `POST /users/{id}/reset-password` | Any authenticated | Own account (current password required) or `ADMIN`; another user's id answers `404` like an absent id |
 | All other `/users` endpoints | `ADMIN` | Full CRUD access, incl. the paginated list `GET /users` |
 | All `/clients` endpoints | `ADMIN` **or** `clients:admin` scope | IoT device client lifecycle — see §8 |
 | `GET /login-events` | `login-events:read` scope only (ADMIN gets 403) | Login-event outbox for data-service — see §2 "data-service" |

@@ -13,6 +13,13 @@ spring:
 
 server:
   port: 8080
+  # Mirrors src/main/resources/application.yaml (#106; pinned by ProductionYamlSessionCookieTest).
+  servlet:
+    session:
+      cookie:
+        secure: true
+        http-only: true
+        same-site: lax
 
 app:
   jwt:

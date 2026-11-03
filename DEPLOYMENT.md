@@ -157,15 +157,32 @@ kubectl -n apps get pods -l app=auth-service   # new pod: small AGE, then READY 
 Do not use `kubectl rollout restart`. Flux strips its `restartedAt` annotation on the next Kustomization apply, which can cancel the rollout before the new pod is Ready, while `rollout status` still reports success. Deleting the pod makes the ReplicaSet recreate it; with one replica, expect ~30–60 s of downtime. Verify with the pod age and the startup log, not with `rollout status` alone.
 
 ### RSA key rotation
-```bash
-openssl genrsa -out private.pem 2048
-openssl rsa -in private.pem -pubout -out public.pem
-kubectl delete secret homelab-auth-rsa-keys -n apps
-kubectl create secret generic homelab-auth-rsa-keys -n apps --from-file=private.pem --from-file=public.pem
-kubectl -n apps delete pod -l app=auth-service
-rm private.pem public.pem
-```
-**Note:** All existing tokens become invalid immediately.
+
+The signing key and its JWK `kid` must change together: consumers cache keys by `kid` (mcp-hub up to 1 h, Spring
+resource servers about 5 min) and only refetch the JWKS for an unknown `kid`. Never reuse a `kid` for another key.
+In production the key comes from the owner's encrypted variables (`auth_service_rsa_private_key` /
+`auth_service_rsa_public_key`) through infrastructure playbook 59 into `homelab-auth-rsa-keys`; a key created with
+`kubectl create secret` is overwritten by the next playbook-59 run. The `kid` is `APP_JWT_KEY_ID` (default
+`auth-service-v1`). Order (owner actions, each with its own go):
+
+1. Open a pull request that sets `APP_JWT_KEY_ID` to the next unused value (for example `auth-service-v2`) in
+   `k8s/deployment.yaml`. Do not merge it yet.
+2. Generate a 3072-bit key in PKCS#8 (the service reads only `BEGIN PRIVATE KEY`; `openssl genrsa` writes PKCS#1 under
+   LibreSSL and OpenSSL 1.x):
+   ```bash
+   openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out private.pem
+   openssl pkey -in private.pem -pubout -out public.pem
+   head -1 private.pem   # must be: -----BEGIN PRIVATE KEY-----
+   ```
+   Put both into the encrypted variables, then delete the local files.
+3. Run playbook 59. The mounted files change; the running pod keeps signing with the old key from memory.
+4. Merge the `kid` pull request right away. The Flux rollout starts a pod that loads the new key with the new `kid`.
+   Between steps 3 and 4 any restart (another merge, a node reset) would sign with the new key under the old `kid`, so
+   keep that window short and merge nothing else in it.
+
+Effect: access and ID tokens signed with the old key fail at every consumer once it drops the old `kid`; refresh
+tokens are opaque database rows and keep working, so clients recover with their next refresh. An old
+`id_token_hint` no longer verifies, so `/connect/logout` with it answers `400`.
 
 ### Add new OIDC client
 1. Generate the encoded secret. Create the plaintext, e.g. `openssl rand -hex 32` (bcrypt uses only the first 72
@@ -539,6 +556,7 @@ Common: Insufficient CPU/memory, nodeSelector mismatch, image not available for 
 | `CLAUDE_CLUB_MCP_CLIENT_SECRET` | `homelab-auth-secrets` (`claude-club-mcp-client-secret`) | No | `claude-club-mcp` client secret, `{bcrypt}` cost 10; blank = client not seeded |
 | `CLAUDE_CLUB_MCP_ALLOWED_USERS` | `homelab-auth-secrets` (`claude-club-mcp-allowed-users`) | No | Usernames allowed to use `claude-club-mcp`, comma-separated, exact spelling; empty = everyone rejected |
 | `SENTRY_DSN` | `sentry-dsn` | No | Sentry error tracking |
+| `APP_JWT_KEY_ID` | Config | No | JWK `kid` of the signing key (default `auth-service-v1`); bump on every key rotation, never blank |
 | `APP_LOGIN_THROTTLE_ENABLED` | Config | No | `false` disables the failed-attempt throttle (#104); default `true` |
 
 ---

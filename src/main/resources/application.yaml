@@ -21,9 +21,19 @@ spring:
 server:
   port: 8080
   forward-headers-strategy: native
+  servlet:
+    session:
+      cookie:
+        # Explicit instead of inferred from X-Forwarded-Proto (#106). Local http dev on a host other than
+        # localhost: SERVER_SERVLET_SESSION_COOKIE_SECURE=false.
+        secure: true
+        http-only: true
+        same-site: lax
 
 app:
   jwt:
+    # JWK "kid" of the signing key; bump it with every key rotation (DEPLOYMENT.md, RSA key rotation).
+    key-id: auth-service-v1
     private-key: classpath:keys/private.pem
     public-key: classpath:keys/public.pem
     access-token-expiry: 900000
