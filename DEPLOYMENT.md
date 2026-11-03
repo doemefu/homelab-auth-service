@@ -250,6 +250,76 @@ SQL
 4. Restart (see "Restart service") and check that the WARN line for that client is gone. Then test one login or token
    request of the client.
 
+### Rotate an SSO client secret
+
+Registered clients live in `oauth2_registered_client` (Flyway V5); the seeder never updates an existing row, and the
+row is read on every client authentication (no cache), so an `UPDATE` takes effect at once. All steps are owner
+actions; playbook runs and restarts need a go. Order:
+
+1. Create the new plaintext and its `{bcrypt}` value, and check the hash, as in "Add new OIDC client" step 1 and
+   "Client secret not stored as {bcrypt}" step 1.
+2. Put the new values into the encrypted variables and run playbook 59 (it updates the Kubernetes Secrets; no pod
+   restarts):
+   - `grafana`, `homeassistant`: the auth-service key (`auth_service_grafana_client_secret` /
+     `auth_service_ha_client_secret`) gets the `{bcrypt}` value; the consumer's own configuration gets the plaintext.
+   - `device-service`, `n8n`, `litellm`, `furchert-ch`, `data-service`: one variable feeds both sides today (playbook 59
+     adds `{noop}` for auth-service, the consumer gets the plaintext), so set it to the new plaintext. homelab#154
+     splits them so that auth-service gets a `{bcrypt}` value.
+   - `claude-mcp-hub`, `claude-club-mcp`: see their own sections below.
+3. Update the row with the `{bcrypt}` value (quoted heredoc, the hash contains `$`); from now on the old secret fails:
+```bash
+kubectl -n apps exec -i postgresql-0 -c postgresql -- psql -U postgres -d homelabdb -v ON_ERROR_STOP=1 <<'SQL'
+UPDATE oauth2_registered_client SET client_secret = '<{bcrypt} value>' WHERE client_id = '<client-id>' AND client_kind = 'sso';
+SQL
+# expected: UPDATE 1
+```
+4. Restart the consumer at once so it reads the new plaintext (Flux apps: `kubectl -n apps delete pod -l app=<name>`).
+   A consumer that kept retrying the old secret may get `429` for up to 5 minutes ("Login throttle").
+5. Optional: restart auth-service (see "Restart service") so it reads the new configured value; the start-up WARN of
+   "Client secret not stored as {bcrypt}" shows which clients are still not `{bcrypt}`.
+
+### Revoke a device client
+
+What it does today: no new tokens for that client. Tokens already issued stay valid until their `exp` (the client's
+stored access-token TTL, 3600 s by default from `app.oidc.device-clients.access-token-ttl-seconds`) at any resource
+server that accepts them. Mosquitto does not check device tokens yet (it accepts anonymous connections until
+infrastructure `docs/053-mqtt-device-authentication.md` ships), so revocation does not cut a device off the broker.
+
+1. Preferred: furchert-ch `/dashboard/auth`, tab Clients, as a signed-in ADMIN: delete the client.
+2. Fallback (owner, psql). Only device rows, in one transaction:
+```bash
+kubectl -n apps exec -i postgresql-0 -c postgresql -- psql -U postgres -d homelabdb -v ON_ERROR_STOP=1 <<'SQL'
+BEGIN;
+DELETE FROM oauth2_authorization WHERE registered_client_id =
+  (SELECT id FROM oauth2_registered_client WHERE client_id = '<client-id>' AND client_kind = 'device');
+DELETE FROM oauth2_authorization_consent WHERE registered_client_id =
+  (SELECT id FROM oauth2_registered_client WHERE client_id = '<client-id>' AND client_kind = 'device');
+DELETE FROM oauth2_registered_client WHERE client_id = '<client-id>' AND client_kind = 'device';
+COMMIT;
+SQL
+# expected: the last DELETE reports DELETE 1
+```
+3. Verify with "Inspect registered clients": the client is gone. `DELETE /api/v1/clients/{clientId}` answers `204`
+   also for an unknown id or an SSO client id (nothing deleted), so a typo looks like success.
+
+Cutting off tokens that are already issued needs an RSA key rotation, which invalidates the access and ID tokens of
+every client (see "RSA key rotation"); use it only as a last resort.
+
+### Inspect registered clients
+
+Prints the encoding prefix of each secret, never secret characters:
+```bash
+kubectl -n apps exec postgresql-0 -c postgresql -- psql -U postgres -d homelabdb -c \
+  "SELECT client_id, client_kind, authorization_grant_types, client_authentication_methods, substring(client_secret from '^[{][^}]*[}]') AS secret_encoding FROM oauth2_registered_client ORDER BY client_kind, client_id"
+```
+
+### client_kind cache
+
+`ClientKindLookup` keeps each client's `client_kind` in memory; it only decides whether a `client_credentials` token
+gets the `device_id` claim. A missing row is not cached, so new clients are seen at once. After a manual change of
+`client_kind` on an existing row, restart auth-service (see "Restart service"); the restart also clears the login
+throttle's counters.
+
 ### Enable or change the claude-mcp-hub client
 
 Contract: `../docs/080-mcp-hub.md` §4.1 and §4.6; see `INTERFACES.md` §2 "claude-mcp-hub".

@@ -4,6 +4,7 @@
 
 ### Security
 
+- Operator runbooks in `DEPLOYMENT.md` § Runbooks: SSO client-secret rotation, device-client revocation (stops new tokens; Mosquitto does not check device tokens yet), registered-client inspection, `client_kind` cache (#53).
 - `GET /api/v1/users/{id}` and `POST /api/v1/users/{id}/reset-password` answer `404` (same body as an absent id) when a non-admin asks for another user's id, instead of `403`, so ids cannot be probed (#106).
 - The login page sends a `Content-Security-Policy` (`default-src 'none'`, same-origin and inline styles, no scripts, `frame-ancestors 'none'`; no `form-action`, which would block the redirect to the client after sign-in). The session cookie is explicitly `Secure; HttpOnly; SameSite=Lax` (#106).
 - The JWK `kid` is configurable (`APP_JWT_KEY_ID`, default unchanged `auth-service-v1`); the rotation runbook bumps it together with a 3072-bit key (#106).
