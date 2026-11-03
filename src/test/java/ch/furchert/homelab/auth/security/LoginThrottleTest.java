@@ -313,12 +313,56 @@ class LoginThrottleTest {
         for (int i = 0; i < 4; i++) {
             login("locked" + i, null, Outcome.FAILURE);
         }
-        assertThat(login("new-user", null, Outcome.FAILURE)).isTrue();          // shares the overflow key
-        assertThat(throttle.peekOverflow("user")).isNotNull();
-        assertThat(throttle.acquireLogin("another-new-user", null).admitted()).isFalse();   // overflow locked
+        assertThat(login("new-user", null, Outcome.FAILURE)).isTrue();          // throttled on its shard
+        int shard = throttle.overflowShard("user", "new-user");
+        assertThat(throttle.peekOverflow("user", shard)).isNotNull();
+        String sameShard = otherUsername(shard, true);
+        String otherShard = otherUsername(shard, false);
+        assertThat(throttle.acquireLogin(sameShard, null).admitted()).isFalse();   // that shard is locked
+        // A legitimate new user on another shard (and from another IP) still gets in.
+        assertThat(login(otherShard, "198.51.100.200", Outcome.SUCCESS)).isTrue();
         for (int i = 0; i < 4; i++) {
             assertThat(throttle.acquireLogin("locked" + i, null).admitted()).isFalse();
         }
+    }
+
+    private String otherUsername(int shard, boolean same) {
+        for (int i = 0; ; i++) {
+            String candidate = "candidate" + i;
+            if ((throttle.overflowShard("user", candidate) == shard) == same) {
+                return candidate;
+            }
+        }
+    }
+
+    @Test
+    void aSuccessNeverResetsAnOverflowShard() {
+        props.setMaxEntries(4);
+        props.setUser(new LoginThrottleProperties.Limits(2, Duration.ofMinutes(15), Duration.ofMinutes(5)));
+        for (int i = 0; i < 4; i++) {   // fill the table with locked entries
+            login("locked" + i, null, Outcome.FAILURE);
+            login("locked" + i, null, Outcome.FAILURE);
+        }
+        int shard = throttle.overflowShard("user", "guess-a");
+        login("guess-a", null, Outcome.FAILURE);
+        login(otherUsername(shard, true), null, Outcome.SUCCESS);   // a valid account on the same shard
+        assertThat(throttle.peekOverflow("user", shard).failures()).isEqualTo(1);
+        login("guess-a", null, Outcome.FAILURE);
+        assertThat(throttle.peekOverflow("user", shard).lockedAt(clock.millis())).isTrue();
+    }
+
+    @Test
+    void fullScanFindsAnEvictableEntryOutsideTheSample() {
+        props.setMaxEntries(40);
+        props.setUser(new LoginThrottleProperties.Limits(1, Duration.ofMinutes(15), Duration.ofMinutes(5)));
+        for (int i = 0; i < 39; i++) {
+            login("locked" + i, null, Outcome.FAILURE);   // locked: never evictable
+        }
+        Admission open = throttle.acquireLogin("in-flight-free", null);   // the 40th entry, then idle-able
+        props.setUser(new LoginThrottleProperties.Limits(5, Duration.ofMinutes(15), Duration.ofMinutes(5)));
+        throttle.complete(open.ticket(), Outcome.FAILURE);   // 1 failure, not locked: the only evictable one
+        login("newcomer", null, Outcome.FAILURE);
+        assertThat(throttle.peek("user", "newcomer")).isNotNull();   // tracked under its own key
     }
 
     @Test
@@ -421,8 +465,8 @@ class LoginThrottleTest {
     @Test
     void anotherAccountCannotPushTheOwnersNetworksOut() {
         login("owner", "192.0.2.10", Outcome.SUCCESS);
-        for (int i = 0; i < 200; i++) {
-            login("attacker", "198.51.100." + i, Outcome.SUCCESS);   // one account, many networks
+        for (int i = 0; i <= LoginThrottle.MAX_KNOWN_GOOD_USERS; i++) {   // one account, more networks than the cap
+            login("attacker", "10." + (i / 65536) + "." + ((i / 256) % 256) + "." + (i % 256), Outcome.SUCCESS);
         }
         for (int i = 0; i < 3; i++) {
             login("owner", "203.0.113." + i, Outcome.FAILURE);

@@ -1,12 +1,12 @@
 package ch.furchert.homelab.auth.controller;
 
-import ch.furchert.homelab.auth.security.LoginThrottle;
 import ch.furchert.homelab.auth.config.SecurityConfig;
 import ch.furchert.homelab.auth.dto.CreateDeviceClientRequest;
 import ch.furchert.homelab.auth.dto.DeviceClientCreatedResponse;
 import ch.furchert.homelab.auth.dto.DeviceClientResponse;
 import ch.furchert.homelab.auth.exception.ResourceConflictException;
 import ch.furchert.homelab.auth.exception.ResourceNotFoundException;
+import ch.furchert.homelab.auth.security.LoginThrottle;
 import ch.furchert.homelab.auth.service.DeviceClientService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

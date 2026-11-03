@@ -31,10 +31,12 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.EnumMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -53,10 +55,12 @@ import java.util.concurrent.atomic.AtomicLong;
  * </ul>
  * Only failures count. {@code max-failures} failures inside {@code window} lock the key for
  * {@code lock-duration}; attempts during a lock are rejected before any credential check and are not
- * counted, so a lock always ends. A success resets the count but never lifts an active lock. Failures
- * plus attempts in flight never exceed {@code max-failures}. Keys are salted SHA-256 digests, so
- * neither huge inputs nor plaintext usernames are kept and table positions cannot be predicted. When a
- * table is full, new keys share one overflow key per table (still throttled). Log lines never contain
+ * counted, so a lock always ends. A success resets the count but never lifts an active lock. For
+ * attempts without an exemption, failures plus attempts in flight never exceed {@code max-failures}.
+ * Keys are salted SHA-256 digests, so neither huge inputs nor plaintext usernames are kept and table
+ * positions cannot be predicted. When a table is full of active entries, a new key is throttled on one of
+ * {@value #OVERFLOW_SHARDS} overflow keys chosen by its salted hash; a success never resets an overflow
+ * key. Log lines never contain
  * a username, an IP or a secret; client locks name the (registered) client id.
  * {@code users.status} is never touched and no authorization is revoked.
  */
@@ -73,6 +77,7 @@ public class LoginThrottle {
     static final int MAX_KNOWN_GOOD_USERS = 10_000;
     static final int KNOWN_GOOD_NETWORKS_PER_USER = 8;
     static final int FINGERPRINTS_PER_CLIENT = 4;
+    static final int OVERFLOW_SHARDS = 256;
     private static final int EVICTION_SAMPLE = 16;
     private static final long FULL_SCAN_INTERVAL_MILLIS = 10_000;
     private static final long WARNING_INTERVAL_MILLIS = 60_000;
@@ -107,7 +112,7 @@ public class LoginThrottle {
     public record Admission(boolean admitted, Ticket ticket, Duration retryAfter) {
     }
 
-    private record Slot(Kind kind, Key key) {
+    private record Slot(Kind kind, Key key, boolean overflow) {
     }
 
     private record Reservation(boolean admitted, Slot slot, boolean lockedAtAcquire, Duration retryAfter) {
@@ -139,7 +144,8 @@ public class LoginThrottle {
     private final byte[] keySalt = new byte[32];
     private final byte[] fingerprintKey = new byte[32];
     private final Map<Kind, ConcurrentHashMap<Key, Counter>> counters = new EnumMap<>(Kind.class);
-    private final Map<Kind, Key> overflowKeys = new EnumMap<>(Kind.class);
+    private final Map<Kind, Key[]> overflowKeys = new EnumMap<>(Kind.class);
+    private final Set<Key> allOverflowKeys = new HashSet<>();
     /** username key → (network key → last success); a few networks per username. */
     private final ConcurrentHashMap<Key, Map<Key, Long>> knownGood = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, List<byte[]>> clientFingerprints = new ConcurrentHashMap<>();
@@ -148,6 +154,7 @@ public class LoginThrottle {
     private final Map<Kind, AtomicLong> rejectedInFlight = new EnumMap<>(Kind.class);
     private final Map<Kind, AtomicLong> overflowed = new EnumMap<>(Kind.class);
     private final AtomicBoolean missingContextWarned = new AtomicBoolean();
+    private final AtomicBoolean missingIpWarned = new AtomicBoolean();
 
     @Autowired
     public LoginThrottle(LoginThrottleProperties properties) {
@@ -162,7 +169,12 @@ public class LoginThrottle {
         random.nextBytes(fingerprintKey);   // per process: fingerprints are only compared in this process
         for (Kind kind : Kind.values()) {
             counters.put(kind, new ConcurrentHashMap<>());
-            overflowKeys.put(kind, key("overflow", kind.name()));
+            Key[] shards = new Key[OVERFLOW_SHARDS];
+            for (int i = 0; i < OVERFLOW_SHARDS; i++) {
+                shards[i] = key("overflow", kind.name() + ":" + i);
+                allOverflowKeys.add(shards[i]);
+            }
+            overflowKeys.put(kind, shards);
             lastFullScan.put(kind, new AtomicLong(Long.MIN_VALUE / 2));
             rejectedLocked.put(kind, new AtomicLong());
             rejectedInFlight.put(kind, new AtomicLong());
@@ -195,7 +207,7 @@ public class LoginThrottle {
         String user = username == null ? "" : username.trim().toLowerCase(Locale.ROOT);
         String network = network(clientIp);
         if (network == null) {
-            warnMissingContextOnce("no client IP");
+            warnOnce(missingIpWarned, "no client IP; only the username key applies");
         }
         Key userKey = key("user", user);
         Key networkKey = network == null ? null : key("ip", network);
@@ -248,12 +260,12 @@ public class LoginThrottle {
         if (attributes != null) {
             attributes.setAttribute(OUTCOME_ATTRIBUTE, outcome, RequestAttributes.SCOPE_REQUEST);
         } else {
-            warnMissingContextOnce("no request context for a form-login event; the attempt is not counted");
+            warnOnce(missingContextWarned, "no request context for a form-login event; the attempt is not counted");
         }
     }
 
-    void warnMissingContextOnce(String what) {
-        if (missingContextWarned.compareAndSet(false, true)) {
+    private static void warnOnce(AtomicBoolean flag, String what) {
+        if (flag.compareAndSet(false, true)) {
             log.warn("Login throttle: {} (logged once)", what);
         }
     }
@@ -267,7 +279,7 @@ public class LoginThrottle {
         long now = clock.millis();
         String network = network(clientIp);
         if (network == null) {
-            warnMissingContextOnce("no client IP");
+            warnOnce(missingIpWarned, "no client IP; client keys fall back to one key per client id");
         }
         byte[] fingerprint = presentedSecret == null ? null : fingerprint(clientId, presentedSecret);
         boolean known = fingerprint != null && isKnownFingerprint(clientId, fingerprint);
@@ -362,9 +374,18 @@ public class LoginThrottle {
         return counters.get(Kind.valueOf(kind.toUpperCase(Locale.ROOT))).get(key(kind, value));
     }
 
-    Counter peekOverflow(String kind) {
+    /** Overflow shard of a value, as {@link #reserve} picks it. */
+    int overflowShard(String kind, String value) {
+        return shard(key(kind, value));
+    }
+
+    Counter peekOverflow(String kind, int shard) {
         Kind k = Kind.valueOf(kind.toUpperCase(Locale.ROOT));
-        return counters.get(k).get(overflowKeys.get(k));
+        return counters.get(k).get(overflowKeys.get(k)[shard]);
+    }
+
+    private static int shard(Key key) {
+        return (int) Long.remainderUnsigned(key.a(), OVERFLOW_SHARDS);
     }
 
     private Limits limits(Kind kind) {
@@ -396,13 +417,17 @@ public class LoginThrottle {
     private Reservation reserve(Kind kind, Key key, long now, Exemption exemption) {
         ConcurrentHashMap<Key, Counter> map = counters.get(kind);
         Key effective = key;
+        boolean overflow = false;
         if (!map.containsKey(key) && map.size() >= capacity(kind) && !makeRoom(kind, now)) {
-            // Full of active entries: new keys share one overflow key, which is throttled like any key.
-            effective = overflowKeys.get(kind);
+            // Full of active entries: the new key is throttled on its overflow shard (salted hash), so
+            // locking one shard never blocks the other new keys.
+            effective = overflowKeys.get(kind)[shard(key)];
+            overflow = true;
             overflowed.get(kind).incrementAndGet();
         }
         Limits limits = limits(kind);
         Key slotKey = effective;
+        boolean overflowSlot = overflow;
         Reservation[] out = new Reservation[1];
         map.compute(slotKey, (k, old) -> {
             Counter c = normalize(old, limits, now);
@@ -423,7 +448,7 @@ public class LoginThrottle {
                 out[0] = new Reservation(false, null, locked, retry);
                 return c.idleAt(now) ? null : c;
             }
-            out[0] = new Reservation(true, new Slot(kind, slotKey), locked, Duration.ZERO);
+            out[0] = new Reservation(true, new Slot(kind, slotKey, overflowSlot), locked, Duration.ZERO);
             return new Counter(c.failures(), c.inFlight() + 1, c.windowStart(), c.lockedUntil());
         });
         return out[0];
@@ -449,9 +474,10 @@ public class LoginThrottle {
                     lockedUntil = now + limits.getLockDuration().toMillis();
                     lockedAfter[0] = failures;
                 }
-            } else if (outcome == Outcome.SUCCESS && slot.kind() != Kind.IP) {
+            } else if (outcome == Outcome.SUCCESS && slot.kind() != Kind.IP && !slot.overflow()) {
                 // A success proves the credential: reset the count, but an active lock stays, so a
-                // legitimate login never hands an attacker a fresh budget.
+                // legitimate login never hands an attacker a fresh budget. An overflow key is shared, so
+                // one user's success proves nothing about the others and never resets it.
                 failures = 0;
                 windowStart = now;
             }
@@ -499,8 +525,7 @@ public class LoginThrottle {
      */
     private boolean makeRoom(Kind kind, long now) {
         ConcurrentHashMap<Key, Counter> map = counters.get(kind);
-        Key overflow = overflowKeys.get(kind);
-        Key victim = pickVictim(map, overflow, now, EVICTION_SAMPLE);
+        Key victim = pickVictim(map, now, EVICTION_SAMPLE);
         if (victim == null) {
             AtomicLong last = lastFullScan.get(kind);
             long previous = last.get();
@@ -509,7 +534,7 @@ public class LoginThrottle {
                 if (map.size() < capacity(kind)) {
                     return true;
                 }
-                victim = pickVictim(map, overflow, now, Integer.MAX_VALUE);
+                victim = pickVictim(map, now, Integer.MAX_VALUE);
             }
         }
         if (victim != null) {
@@ -518,13 +543,13 @@ public class LoginThrottle {
         return map.size() < capacity(kind);
     }
 
-    private static Key pickVictim(Map<Key, Counter> map, Key overflow, long now, int sample) {
+    private Key pickVictim(Map<Key, Counter> map, long now, int sample) {
         Key victim = null;
         int fewest = Integer.MAX_VALUE;
         int seen = 0;
         for (Map.Entry<Key, Counter> e : map.entrySet()) {
             Counter c = e.getValue();
-            if (!e.getKey().equals(overflow) && evictable(c, now) && c.failures() < fewest) {
+            if (!allOverflowKeys.contains(e.getKey()) && evictable(c, now) && c.failures() < fewest) {
                 victim = e.getKey();
                 fewest = c.failures();
             }
