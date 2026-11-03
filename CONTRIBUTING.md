@@ -153,9 +153,9 @@ curl -s http://localhost:8080/oauth2/jwks | jq
 # those) - Surefire's default include glob picks up all of them.
 ./mvnw test
 
-# No maven-failsafe-plugin is bound in pom.xml, so this currently runs
-# nothing beyond `./mvnw test`. IT-suffixed classes (e.g.
-# DeviceClientLifecycleIT) are NOT picked up by either command - see #85.
+# No maven-failsafe-plugin is bound in pom.xml, so this runs nothing beyond
+# `./mvnw test`. Name test classes *Test.java: an *IT.java class would run
+# under neither command (#85).
 ./mvnw verify
 
 # Specific test
@@ -247,7 +247,7 @@ SELECT * FROM flyway_schema_history_auth ORDER BY installed_rank;
 
 ## Code Review Checklist
 
-- [ ] All tests pass (`./mvnw verify`; note `*IT.java`-suffixed classes such as `DeviceClientLifecycleIT` are not executed by this command — see #85 and "Running Tests" above)
+- [ ] All tests pass (`./mvnw verify`; test classes are named `*Test.java`, an `*IT.java` class would not run — see #85 and "Running Tests" above)
 - [ ] No drive-by refactors or style-only changes
 - [ ] All comments in English
 - [ ] New features have unit tests
