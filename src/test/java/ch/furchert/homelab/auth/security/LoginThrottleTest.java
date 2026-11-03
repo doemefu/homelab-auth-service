@@ -66,6 +66,7 @@ class LoginThrottleTest {
         props.setUser(new LoginThrottleProperties.Limits(3, Duration.ofMinutes(15), Duration.ofMinutes(5)));
         props.setIp(new LoginThrottleProperties.Limits(5, Duration.ofMinutes(15), Duration.ofMinutes(15)));
         props.setClient(new LoginThrottleProperties.Limits(3, Duration.ofMinutes(5), Duration.ofMinutes(5)));
+        props.setClientId(new LoginThrottleProperties.Limits(5, Duration.ofMinutes(5), Duration.ofMinutes(5)));
         clock = new TestClock();
         throttle = new LoginThrottle(props, clock);
     }
@@ -306,21 +307,26 @@ class LoginThrottleTest {
     }
 
     @Test
-    void fullMapOfLockedEntriesSendsNewKeysToThrottledOverflowShards() {
+    void fullMapOfLockedEntriesSendsNewKeysToBoundedOverflowShards() {
         props.setMaxEntries(4);
         props.setUser(new LoginThrottleProperties.Limits(1, Duration.ofMinutes(15), Duration.ofMinutes(5)));
         props.setIp(new LoginThrottleProperties.Limits(1000, Duration.ofMinutes(15), Duration.ofMinutes(15)));
         for (int i = 0; i < 4; i++) {
             login("locked" + i, null, Outcome.FAILURE);
         }
-        assertThat(login("new-user", null, Outcome.FAILURE)).isTrue();          // throttled on its shard
+        assertThat(login("new-user", null, Outcome.FAILURE)).isTrue();          // counted on its shard
         int shard = throttle.overflowShard("user", "new-user");
         assertThat(throttle.peekOverflow("user", shard)).isNotNull();
         String sameShard = otherUsername(shard, true);
-        String otherShard = otherUsername(shard, false);
-        assertThat(throttle.acquireLogin(sameShard, null).admitted()).isFalse();   // that shard is locked
-        // A legitimate new user on another shard (and from another IP) still gets in.
-        assertThat(login(otherShard, "198.51.100.200", Outcome.SUCCESS)).isTrue();
+        // The shard is bounded (max 1 failure per 60 s window): fast reject, no lock, Retry-After <= 60 s.
+        Admission same = throttle.acquireLogin(sameShard, null);
+        assertThat(same.admitted()).isFalse();
+        assertThat(same.retryAfter()).isLessThanOrEqualTo(Duration.ofSeconds(60));
+        assertThat(throttle.peekOverflow("user", shard).lockedAt(clock.millis())).isFalse();
+        // A flood on one shard cannot reject a new user on another shard.
+        assertThat(login(otherUsername(shard, false), "198.51.100.200", Outcome.SUCCESS)).isTrue();
+        clock.advance(Duration.ofSeconds(61));
+        assertThat(throttle.acquireLogin(sameShard, null).admitted()).isTrue();   // the short window ended
         for (int i = 0; i < 4; i++) {
             assertThat(throttle.acquireLogin("locked" + i, null).admitted()).isFalse();
         }
@@ -348,7 +354,9 @@ class LoginThrottleTest {
         login(otherUsername(shard, true), null, Outcome.SUCCESS);   // a valid account on the same shard
         assertThat(throttle.peekOverflow("user", shard).failures()).isEqualTo(1);
         login("guess-a", null, Outcome.FAILURE);
-        assertThat(throttle.peekOverflow("user", shard).lockedAt(clock.millis())).isTrue();
+        assertThat(throttle.peekOverflow("user", shard).failures()).isEqualTo(2);
+        assertThat(throttle.peekOverflow("user", shard).lockedAt(clock.millis())).isFalse();   // never locks
+        assertThat(throttle.acquireLogin("guess-a", null).admitted()).isFalse();             // but bounded
     }
 
     @Test
@@ -431,6 +439,133 @@ class LoginThrottleTest {
         for (int i = 0; i < 20; i++) {   // a known secret is never bounded
             assertThat(throttle.acquireClient("furchert-ch", "10.42.0.5", "right").admitted()).isTrue();
         }
+    }
+
+    @Test
+    void rotatingTheSourceIpPutsTheClientIntoStrictMode(CapturedOutput out) {
+        // Five failures, each from a fresh (forged) IP: no per-source key locks, but the client id counts them all.
+        for (int i = 0; i < 5; i++) {
+            assertThat(client("device-service", "10.99.0." + i, "guess" + i, Outcome.FAILURE)).isTrue();
+        }
+        assertThat(out.getAll()).contains("Login throttle: client 'device-service' in strict mode for 300 s");
+        // Strict mode: a new source gets exactly one failed attempt.
+        assertThat(client("device-service", "10.99.1.1", "guess", Outcome.FAILURE)).isTrue();
+        assertThat(throttle.acquireClient("device-service", "10.99.1.1", "guess").admitted()).isFalse();
+        // A clean source is never rejected, so the working client still gets in, and a known secret too.
+        assertThat(client("device-service", "10.42.0.9", "right", Outcome.SUCCESS)).isTrue();
+        assertThat(throttle.acquireClient("device-service", "10.99.1.1", "right").admitted()).isTrue();
+        // Strict mode ends after its duration.
+        clock.advance(Duration.ofMinutes(5).plusSeconds(1));
+        assertThat(client("device-service", "10.99.2.1", "guess", Outcome.FAILURE)).isTrue();
+        assertThat(throttle.acquireClient("device-service", "10.99.2.1", "guess").admitted()).isTrue();
+    }
+
+    @Test
+    void overflowShardsAreNeverUnbounded() {
+        props.setMaxEntries(4);
+        props.setUser(new LoginThrottleProperties.Limits(1, Duration.ofMinutes(15), Duration.ofMinutes(5)));
+        props.setIp(new LoginThrottleProperties.Limits(1000, Duration.ofMinutes(15), Duration.ofMinutes(15)));
+        for (int i = 0; i < 4; i++) {
+            login("locked" + i, null, Outcome.FAILURE);
+        }
+        props.setUser(new LoginThrottleProperties.Limits(3, Duration.ofMinutes(15), Duration.ofMinutes(5)));
+        int shard = throttle.overflowShard("user", "flood");
+        int admitted = 0;
+        int tried = 0;
+        for (int i = 0; tried < 50; i++) {   // parallel attempts on one shard, never completed
+            String name = "flood" + i;
+            if (throttle.overflowShard("user", name) == shard) {
+                admitted += throttle.acquireLogin(name, null).admitted() ? 1 : 0;
+                tried++;
+            }
+        }
+        assertThat(admitted).isLessThanOrEqualTo(3);
+    }
+
+    @Test
+    void strictModeRejectsButNeverLocks() {
+        for (int i = 0; i < 5; i++) {
+            client("device-service", "10.99.0." + i, "guess" + i, Outcome.FAILURE);
+        }
+        client("device-service", "10.99.1.1", "guess", Outcome.FAILURE);
+        Admission rejected = throttle.acquireClient("device-service", "10.99.1.1", "guess");
+        assertThat(rejected.admitted()).isFalse();
+        assertThat(rejected.retryAfter()).isGreaterThan(Duration.ofMinutes(4));   // until its window ends
+        assertThat(throttle.peek("client", "10.99.1.1|device-service").lockedAt(clock.millis())).isFalse();
+    }
+
+    @Test
+    void strictModeAllowsOneAttemptAtATimePerSource() {
+        for (int i = 0; i < 5; i++) {
+            client("device-service", "10.99.0." + i, "guess" + i, Outcome.FAILURE);
+        }
+        assertThat(throttle.acquireClient("device-service", "10.42.0.30", "right").admitted()).isTrue();
+        assertThat(throttle.acquireClient("device-service", "10.42.0.30", "right").admitted()).isFalse();
+    }
+
+    @Test
+    void aFullClientTableOnlyRejectsSourcesOnFloodedShards() {
+        throttle.setClientCapacity(4);
+        for (int c = 0; c < 4; c++) {   // fill the per-source table with locked entries
+            for (int i = 0; i < 3; i++) {
+                client("other" + c, "10.98.0." + c, "guess", Outcome.FAILURE);
+            }
+        }
+        // The attacker floods the overflow shard of its own sources (it cannot pick the victim's shard).
+        int flooded = throttle.overflowShard("client", "10.97.0.0|claude-mcp-hub");
+        int sent = 0;
+        for (int i = 0; sent < 60; i++) {
+            String ip = "10.97." + (i / 256) + "." + (i % 256);
+            if (throttle.overflowShard("client", ip + "|claude-mcp-hub") == flooded) {
+                client("claude-mcp-hub", ip, "guess", Outcome.FAILURE);
+                sent++;
+            }
+        }
+        int otherShards = 0;
+        for (int i = 0; i < 200; i++) {
+            String ip = "160.79.104." + i;
+            if (throttle.overflowShard("client", ip + "|claude-mcp-hub") == flooded) {
+                continue;
+            }
+            Admission a = throttle.acquireClient("claude-mcp-hub", ip, "the-real-secret");
+            assertThat(a.admitted()).isTrue();   // a victim on another shard is never rejected
+            throttle.complete(a.ticket(), Outcome.NONE);
+            otherShards++;
+        }
+        assertThat(otherShards).isGreaterThan(150);
+    }
+
+    @Test
+    void aCleanSourceOnAFloodedShardIsStillAdmittedInStrictMode() {
+        throttle.setClientCapacity(4);
+        for (int c = 0; c < 4; c++) {   // fill the per-source table with locked entries
+            for (int i = 0; i < 3; i++) {
+                client("other" + c, "10.98.0." + c, "guess", Outcome.FAILURE);
+            }
+        }
+        for (int i = 0; i < 5; i++) {   // strict mode for the hub (client id max 5)
+            client("claude-mcp-hub", "10.96.0." + i, "guess", Outcome.FAILURE);
+        }
+        // One failure on the shard of a victim source: below the shard bound (client max 3).
+        String victim = "160.79.104.10";
+        int shard = throttle.overflowShard("client", victim + "|claude-mcp-hub");
+        for (int i = 0; ; i++) {
+            String ip = "10.95." + (i / 256) + "." + (i % 256);
+            if (throttle.overflowShard("client", ip + "|claude-mcp-hub") == shard) {
+                client("claude-mcp-hub", ip, "guess", Outcome.FAILURE);
+                break;
+            }
+        }
+        assertThat(throttle.acquireClient("claude-mcp-hub", victim, "the-real-secret").admitted()).isTrue();
+    }
+
+    @Test
+    void successesDoNotResetTheAllSourcesCount() {
+        for (int i = 0; i < 4; i++) {
+            client("furchert-ch", "10.99.0." + i, "guess", Outcome.FAILURE);
+            client("furchert-ch", "10.42.0.5", "right", Outcome.SUCCESS);   // busy legitimate traffic
+        }
+        assertThat(throttle.peek("client-id", "furchert-ch").failures()).isEqualTo(4);
     }
 
     @Test

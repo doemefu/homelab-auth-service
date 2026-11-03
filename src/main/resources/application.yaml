@@ -158,6 +158,8 @@ app:
     user: { max-failures: 10, window: 15m, lock-duration: 5m }
     ip: { max-failures: 20, window: 15m, lock-duration: 15m }
     client: { max-failures: 10, window: 5m, lock-duration: 5m }
+    # All sources of one client_id (the IP header can be forged in-cluster): strict mode, 1 failure per source.
+    client-id: { max-failures: 50, window: 5m, lock-duration: 5m }
     known-good-ttl: 30d
     max-entries: 30000
 
