@@ -60,6 +60,7 @@ class LoginThrottleIntegrationTest extends AbstractIntegrationTest {
     private LoginThrottleProperties.Limits user;
     private LoginThrottleProperties.Limits ip;
     private LoginThrottleProperties.Limits client;
+    private LoginThrottleProperties.Limits clientId;
     private AuthCodeFlow flow;
 
     @BeforeEach
@@ -67,9 +68,11 @@ class LoginThrottleIntegrationTest extends AbstractIntegrationTest {
         user = props.getUser();
         ip = props.getIp();
         client = props.getClient();
+        clientId = props.getClientId();
         props.setUser(new LoginThrottleProperties.Limits(3, Duration.ofMinutes(15), Duration.ofMinutes(5)));
         props.setIp(new LoginThrottleProperties.Limits(50, Duration.ofMinutes(15), Duration.ofMinutes(15)));
         props.setClient(new LoginThrottleProperties.Limits(3, Duration.ofMinutes(5), Duration.ofMinutes(5)));
+        props.setClientId(new LoginThrottleProperties.Limits(3, Duration.ofMinutes(5), Duration.ofMinutes(5)));
         throttle.clear();
         flow = new AuthCodeFlow(mockMvc, objectMapper, userRepository, passwordEncoder, jdbc, jwkSource);
     }
@@ -79,6 +82,7 @@ class LoginThrottleIntegrationTest extends AbstractIntegrationTest {
         props.setUser(user);
         props.setIp(ip);
         props.setClient(client);
+        props.setClientId(clientId);
         throttle.clear();
     }
 
@@ -181,6 +185,22 @@ class LoginThrottleIntegrationTest extends AbstractIntegrationTest {
         mockMvc.perform(clientCredentials("device-service", "device-service-secret", "203.0.113.81", true))
                 .andExpect(status().isOk());
         mockMvc.perform(clientCredentials("furchert-ch", "furchert-ch-secret", "203.0.113.80", true))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void rotatingForgedSourceIpsPutsTheClientIntoStrictModeWithoutLockingItOut() throws Exception {
+        for (int i = 0; i < 3; i++) {   // one wrong secret per forged CF-Connecting-IP
+            mockMvc.perform(clientCredentials("device-service", "wrong", "203.0.113." + (100 + i), true))
+                    .andExpect(status().isUnauthorized());
+        }
+        // Strict mode: a further source gets one failed attempt, then 429.
+        mockMvc.perform(clientCredentials("device-service", "wrong", "203.0.113.110", true))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(clientCredentials("device-service", "device-service-secret", "203.0.113.110", true))
+                .andExpect(status().isTooManyRequests());
+        // A source without failures is never rejected: the working client keeps getting tokens.
+        mockMvc.perform(clientCredentials("device-service", "device-service-secret", "10.42.0.20", true))
                 .andExpect(status().isOk());
     }
 

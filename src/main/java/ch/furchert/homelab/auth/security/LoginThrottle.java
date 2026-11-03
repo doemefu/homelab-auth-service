@@ -51,7 +51,11 @@ import java.util.concurrent.atomic.AtomicLong;
  *   username is locked as well; it is still bounded by the number of attempts in flight.</li>
  *   <li>Client authentication ({@link ThrottlingClientSecretAuthenticationProvider}): one key per
  *   (client IP, client_id). A secret that already authenticated this client since the last restart
- *   passes the lock, so once a client has authenticated, nobody else can lock it out.</li>
+ *   passes the lock, so once a client has authenticated, nobody else can lock it out. The client IP comes
+ *   from a header that callers inside the cluster can forge, so a second, IP-independent key per client_id
+ *   counts failures from all sources: past its threshold the client is in strict mode, where every source
+ *   gets a single failed attempt. Strict mode never rejects a source without failures, so it cannot lock a
+ *   working client out.</li>
  * </ul>
  * Only failures count. {@code max-failures} failures inside {@code window} lock the key for
  * {@code lock-duration}; attempts during a lock are rejected before any credential check and are not
@@ -83,7 +87,7 @@ public class LoginThrottle {
     private static final long WARNING_INTERVAL_MILLIS = 60_000;
 
     enum Kind {
-        USER("username"), IP("client IP"), CLIENT("client");
+        USER("username"), IP("client IP"), CLIENT("client"), CLIENT_ID("client id (all sources)");
 
         final String label;
 
@@ -112,7 +116,8 @@ public class LoginThrottle {
     public record Admission(boolean admitted, Ticket ticket, Duration retryAfter) {
     }
 
-    private record Slot(Kind kind, Key key, boolean overflow) {
+    /** {@code maxFailures} 0 = the kind's configured threshold. */
+    private record Slot(Kind kind, Key key, boolean overflow, int maxFailures) {
     }
 
     private record Reservation(boolean admitted, Slot slot, boolean lockedAtAcquire, Duration retryAfter) {
@@ -285,14 +290,31 @@ public class LoginThrottle {
         }
         byte[] fingerprint = presentedSecret == null ? null : fingerprint(clientId, presentedSecret);
         boolean known = fingerprint != null && isKnownFingerprint(clientId, fingerprint);
-        // A known secret is a correct secret: no guessing is possible, so no bound at all.
-        Reservation r = reserve(Kind.CLIENT, key("client", (network == null ? "-" : network) + "|" + clientId),
-                now, known ? Exemption.FULL : Exemption.NONE);
+        if (known) {
+            // A known secret is a correct secret: no guessing is possible, so no bound and nothing to count.
+            Reservation r = reserve(Kind.CLIENT, clientKey(network, clientId), now, Exemption.FULL, 0);
+            return new Admission(true, new Ticket(List.of(r.slot()), null, null, clientId, fingerprint, true),
+                    Duration.ZERO);
+        }
+        Key clientIdKey = key("client-id", clientId);
+        boolean strict = isLocked(Kind.CLIENT_ID, clientIdKey, now);
+        Reservation r = reserve(Kind.CLIENT, clientKey(network, clientId), now, Exemption.NONE, strict ? 1 : 0);
         if (!r.admitted()) {
             return new Admission(false, null, r.retryAfter());
         }
-        return new Admission(true, new Ticket(List.of(r.slot()), null, null, clientId, fingerprint, known),
-                Duration.ZERO);
+        // Counts failures from every source; never rejects (strict mode only tightens the per-source key).
+        Reservation all = reserve(Kind.CLIENT_ID, clientIdKey, now, Exemption.FULL, 0);
+        return new Admission(true, new Ticket(List.of(r.slot(), all.slot()), null, null, clientId, fingerprint,
+                false), Duration.ZERO);
+    }
+
+    private Key clientKey(String network, String clientId) {
+        return key("client", (network == null ? "-" : network) + "|" + clientId);
+    }
+
+    private boolean isLocked(Kind kind, Key key, long now) {
+        Counter c = normalize(counters.get(kind).get(key), limits(kind), now);
+        return c != null && c.lockedAt(now);
     }
 
     // ---- shared bookkeeping -------------------------------------------------------------------------
@@ -373,7 +395,7 @@ public class LoginThrottle {
     }
 
     Counter peek(String kind, String value) {
-        return counters.get(Kind.valueOf(kind.toUpperCase(Locale.ROOT))).get(key(kind, value));
+        return counters.get(Kind.valueOf(kind.toUpperCase(Locale.ROOT).replace('-', '_'))).get(key(kind, value));
     }
 
     /** Tests: 0 skips the sample, so every eviction goes through the full scan. */
@@ -404,11 +426,12 @@ public class LoginThrottle {
             case USER -> properties.getUser();
             case IP -> properties.getIp();
             case CLIENT -> properties.getClient();
+            case CLIENT_ID -> properties.getClientId();
         };
     }
 
     private int capacity(Kind kind) {
-        return kind == Kind.CLIENT ? MAX_CLIENT_ENTRIES : properties.getMaxEntries();
+        return kind == Kind.CLIENT || kind == Kind.CLIENT_ID ? MAX_CLIENT_ENTRIES : properties.getMaxEntries();
     }
 
     /** Lock expired → fresh window; window expired without a lock → count restarts. In-flight is kept. */
@@ -426,6 +449,11 @@ public class LoginThrottle {
     }
 
     private Reservation reserve(Kind kind, Key key, long now, Exemption exemption) {
+        return reserve(kind, key, now, exemption, 0);
+    }
+
+    /** @param maxOverride a stricter threshold for this attempt (strict mode), 0 = the kind's own */
+    private Reservation reserve(Kind kind, Key key, long now, Exemption exemption, int maxOverride) {
         ConcurrentHashMap<Key, Counter> map = counters.get(kind);
         Key effective = key;
         boolean overflow = false;
@@ -445,7 +473,7 @@ public class LoginThrottle {
             if (c == null) {
                 c = new Counter(0, 0, now, 0);
             }
-            int max = limits.getMaxFailures();
+            int max = maxOverride > 0 ? Math.min(maxOverride, limits.getMaxFailures()) : limits.getMaxFailures();
             boolean locked = c.lockedAt(now);
             boolean full = c.failures() + c.inFlight() >= max;
             boolean reject = switch (exemption) {
@@ -459,7 +487,7 @@ public class LoginThrottle {
                 out[0] = new Reservation(false, null, locked, retry);
                 return c.idleAt(now) ? null : c;
             }
-            out[0] = new Reservation(true, new Slot(kind, slotKey, overflowSlot), locked, Duration.ZERO);
+            out[0] = new Reservation(true, new Slot(kind, slotKey, overflowSlot, maxOverride), locked, Duration.ZERO);
             return new Counter(c.failures(), c.inFlight() + 1, c.windowStart(), c.lockedUntil());
         });
         return out[0];
@@ -479,13 +507,16 @@ public class LoginThrottle {
             int failures = c.failures();
             long windowStart = c.windowStart();
             long lockedUntil = c.lockedUntil();
+            int max = slot.maxFailures() > 0
+                    ? Math.min(slot.maxFailures(), limits.getMaxFailures()) : limits.getMaxFailures();
             if (outcome == Outcome.FAILURE) {
                 failures++;
-                if (failures >= limits.getMaxFailures() && lockedUntil <= now) {
+                if (failures >= max && lockedUntil <= now) {
                     lockedUntil = now + limits.getLockDuration().toMillis();
                     lockedAfter[0] = failures;
                 }
-            } else if (outcome == Outcome.SUCCESS && slot.kind() != Kind.IP && !slot.overflow()) {
+            } else if (outcome == Outcome.SUCCESS && slot.kind() != Kind.IP && slot.kind() != Kind.CLIENT_ID
+                    && !slot.overflow()) {
                 // A success proves the credential: reset the count, but an active lock stays, so a
                 // legitimate login never hands an attacker a fresh budget. An overflow key is shared, so
                 // one user's success proves nothing about the others and never resets it.
@@ -504,6 +535,9 @@ public class LoginThrottle {
             // Failures are only counted for registered clients, so this is never attacker-chosen text.
             log.warn("Login throttle: client '{}' locked for {} s after {} failed attempts",
                     sanitize(clientId), seconds, failures);
+        } else if (kind == Kind.CLIENT_ID) {
+            log.warn("Login throttle: client '{}' in strict mode for {} s after {} failed attempts from all sources "
+                    + "(one failed attempt per source)", sanitize(clientId), seconds, failures);
         } else {
             log.warn("Login throttle: {} locked for {} s after {} failed attempts", kind.label, seconds, failures);
         }

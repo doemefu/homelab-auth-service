@@ -32,6 +32,7 @@ public abstract class AbstractIntegrationTest {
         registry.add("app.login-throttle.user.max-failures", () -> "100000");
         registry.add("app.login-throttle.ip.max-failures", () -> "100000");
         registry.add("app.login-throttle.client.max-failures", () -> "100000");
+        registry.add("app.login-throttle.client-id.max-failures", () -> "100000");
 
         // clients[0]: replaces grafana — primary test client used by OidcFlowIntegrationTest.
         registry.add("app.oidc.clients[0].client-id", () -> "test-client");

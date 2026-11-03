@@ -66,6 +66,7 @@ class LoginThrottleTest {
         props.setUser(new LoginThrottleProperties.Limits(3, Duration.ofMinutes(15), Duration.ofMinutes(5)));
         props.setIp(new LoginThrottleProperties.Limits(5, Duration.ofMinutes(15), Duration.ofMinutes(15)));
         props.setClient(new LoginThrottleProperties.Limits(3, Duration.ofMinutes(5), Duration.ofMinutes(5)));
+        props.setClientId(new LoginThrottleProperties.Limits(5, Duration.ofMinutes(5), Duration.ofMinutes(5)));
         clock = new TestClock();
         throttle = new LoginThrottle(props, clock);
     }
@@ -431,6 +432,34 @@ class LoginThrottleTest {
         for (int i = 0; i < 20; i++) {   // a known secret is never bounded
             assertThat(throttle.acquireClient("furchert-ch", "10.42.0.5", "right").admitted()).isTrue();
         }
+    }
+
+    @Test
+    void rotatingTheSourceIpPutsTheClientIntoStrictMode(CapturedOutput out) {
+        // Five failures, each from a fresh (forged) IP: no per-source key locks, but the client id counts them all.
+        for (int i = 0; i < 5; i++) {
+            assertThat(client("device-service", "10.99.0." + i, "guess" + i, Outcome.FAILURE)).isTrue();
+        }
+        assertThat(out.getAll()).contains("Login throttle: client 'device-service' in strict mode for 300 s");
+        // Strict mode: a new source gets exactly one failed attempt.
+        assertThat(client("device-service", "10.99.1.1", "guess", Outcome.FAILURE)).isTrue();
+        assertThat(throttle.acquireClient("device-service", "10.99.1.1", "guess").admitted()).isFalse();
+        // A clean source is never rejected, so the working client still gets in, and a known secret too.
+        assertThat(client("device-service", "10.42.0.9", "right", Outcome.SUCCESS)).isTrue();
+        assertThat(throttle.acquireClient("device-service", "10.99.1.1", "right").admitted()).isTrue();
+        // Strict mode ends after its duration.
+        clock.advance(Duration.ofMinutes(5).plusSeconds(1));
+        assertThat(client("device-service", "10.99.2.1", "guess", Outcome.FAILURE)).isTrue();
+        assertThat(throttle.acquireClient("device-service", "10.99.2.1", "guess").admitted()).isTrue();
+    }
+
+    @Test
+    void successesDoNotResetTheAllSourcesCount() {
+        for (int i = 0; i < 4; i++) {
+            client("furchert-ch", "10.99.0." + i, "guess", Outcome.FAILURE);
+            client("furchert-ch", "10.42.0.5", "right", Outcome.SUCCESS);   // busy legitimate traffic
+        }
+        assertThat(throttle.peek("client-id", "furchert-ch").failures()).isEqualTo(4);
     }
 
     @Test

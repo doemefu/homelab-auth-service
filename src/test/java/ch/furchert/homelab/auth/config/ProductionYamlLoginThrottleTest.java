@@ -34,6 +34,9 @@ class ProductionYamlLoginThrottleTest {
         assertThat(p.getClient().getMaxFailures()).isEqualTo(10);
         assertThat(p.getClient().getWindow()).isEqualTo(Duration.ofMinutes(5));
         assertThat(p.getClient().getLockDuration()).isEqualTo(Duration.ofMinutes(5));
+        assertThat(p.getClientId().getMaxFailures()).isEqualTo(50);
+        assertThat(p.getClientId().getWindow()).isEqualTo(Duration.ofMinutes(5));
+        assertThat(p.getClientId().getLockDuration()).isEqualTo(Duration.ofMinutes(5));
         assertThat(p.getKnownGoodTtl()).isEqualTo(Duration.ofDays(30));
         assertThat(p.getMaxEntries()).isEqualTo(30_000);
     }

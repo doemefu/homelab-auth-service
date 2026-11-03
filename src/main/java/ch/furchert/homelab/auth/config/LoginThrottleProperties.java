@@ -39,6 +39,15 @@ public class LoginThrottleProperties {
     @NotNull
     private Limits client = new Limits(10, Duration.ofMinutes(5), Duration.ofMinutes(5));
 
+    /**
+     * Per client_id over all sources (the client IP header is forgeable inside the cluster). Reaching
+     * {@code max-failures} puts the client into strict mode for {@code lock-duration}: one failed attempt
+     * per source. Never rejects a source without failures.
+     */
+    @Valid
+    @NotNull
+    private Limits clientId = new Limits(50, Duration.ofMinutes(5), Duration.ofMinutes(5));
+
     /** A (username, network) pair with a successful login is exempt from the username lock this long. */
     @NotNull
     @DurationMin(seconds = 1)
