@@ -13,7 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * Used by the JWT token customizer to decide whether to emit a device_id claim
  * on client_credentials access tokens. The cache is per-JVM and assumes a single
  * auth-service replica. Manual psql edits to client_kind require a service
- * restart to be picked up (documented in OPERATIONS.md).
+ * restart to be picked up (DEPLOYMENT.md, Runbooks, "client_kind cache").
  * <p>
  * Default-deny: unknown ids or absent client_kind values are treated as "not a
  * device client" so the device_id claim is omitted.
