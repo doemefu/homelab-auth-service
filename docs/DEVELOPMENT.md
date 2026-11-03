@@ -211,9 +211,8 @@ run the same thing: everything Maven Surefire's default include glob (`**/*Test.
 matches. That includes plain unit tests, `@WebMvcTest` slices, and every
 Testcontainers-backed class under `src/test/.../integration/` whose filename ends in
 `Test.java` — running `./mvnw test` therefore already requires Docker to be running.
-A class suffixed `*IT.java` instead (there is currently one: `DeviceClientLifecycleIT`)
-is **not** matched by Surefire's default glob and does not run under either command
-— see #85.
+A class suffixed `*IT.java` instead would **not** be matched by Surefire's default glob and
+would run under neither command, so every test class is named `*Test.java` (#85).
 
 ```bash
 # Runs everything Surefire's default glob matches (Docker required - see above)
@@ -485,7 +484,7 @@ HASH=$(htpasswd -bnBC 12 "" yourpassword | tr -d ':\n')
 
 Before merging a PR, verify:
 
-- [ ] All tests pass (`./mvnw verify`; note `*IT.java`-suffixed classes such as `DeviceClientLifecycleIT` are not executed by this command — see #85 and "Running Tests" above)
+- [ ] All tests pass (`./mvnw verify`; test classes are named `*Test.java`, an `*IT.java` class would not run — see #85 and "Running Tests" above)
 - [ ] No drive-by refactors or style-only changes
 - [ ] All comments and documentation are in English
 - [ ] New features have unit tests
@@ -592,7 +591,7 @@ The project uses GitHub Actions for CI/CD:
 
 - **Workflow:** `.github/workflows/build.yml`
 - **Trigger:** Every push and PR to `main`
-- **Test Job:** Runs `./mvnw verify` — equivalent to `./mvnw test` in this repo (no `maven-failsafe-plugin` bound); executes unit tests, `@WebMvcTest` slices, and Testcontainers-backed classes named `*Test.java` under `integration/`. Classes suffixed `*IT.java` (e.g. `DeviceClientLifecycleIT`) are not executed — see #85 and "Running Tests" above.
+- **Test Job:** Runs `./mvnw verify` — equivalent to `./mvnw test` in this repo (no `maven-failsafe-plugin` bound); executes unit tests, `@WebMvcTest` slices, and Testcontainers-backed classes named `*Test.java` under `integration/`. Classes suffixed `*IT.java` would not be executed, so none exist — see #85 and "Running Tests" above.
 - **Build Job:** Multi-arch Docker image (`linux/amd64` + `linux/arm64`) pushed to `ghcr.io/doemefu/homelab-auth-service`
 
 **Tags Pushed:**
