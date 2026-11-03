@@ -155,6 +155,8 @@ public class LoginThrottle {
     private final Map<Kind, AtomicLong> overflowed = new EnumMap<>(Kind.class);
     private final AtomicBoolean missingContextWarned = new AtomicBoolean();
     private final AtomicBoolean missingIpWarned = new AtomicBoolean();
+    private final AtomicLong fullScans = new AtomicLong();
+    private volatile int evictionSample = EVICTION_SAMPLE;
 
     @Autowired
     public LoginThrottle(LoginThrottleProperties properties) {
@@ -374,6 +376,15 @@ public class LoginThrottle {
         return counters.get(Kind.valueOf(kind.toUpperCase(Locale.ROOT))).get(key(kind, value));
     }
 
+    /** Tests: 0 skips the sample, so every eviction goes through the full scan. */
+    void setEvictionSample(int sample) {
+        this.evictionSample = sample;
+    }
+
+    long fullScans() {
+        return fullScans.get();
+    }
+
     /** Overflow shard of a value, as {@link #reserve} picks it. */
     int overflowShard(String kind, String value) {
         return shard(key(kind, value));
@@ -525,11 +536,12 @@ public class LoginThrottle {
      */
     private boolean makeRoom(Kind kind, long now) {
         ConcurrentHashMap<Key, Counter> map = counters.get(kind);
-        Key victim = pickVictim(map, now, EVICTION_SAMPLE);
+        Key victim = pickVictim(map, now, evictionSample);
         if (victim == null) {
             AtomicLong last = lastFullScan.get(kind);
             long previous = last.get();
             if (now - previous >= FULL_SCAN_INTERVAL_MILLIS && last.compareAndSet(previous, now)) {
+                fullScans.incrementAndGet();
                 purge(kind, now);
                 if (map.size() < capacity(kind)) {
                     return true;
@@ -544,6 +556,9 @@ public class LoginThrottle {
     }
 
     private Key pickVictim(Map<Key, Counter> map, long now, int sample) {
+        if (sample <= 0) {
+            return null;
+        }
         Key victim = null;
         int fewest = Integer.MAX_VALUE;
         int seen = 0;

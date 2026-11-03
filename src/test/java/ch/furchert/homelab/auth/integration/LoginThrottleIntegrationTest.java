@@ -167,7 +167,7 @@ class LoginThrottleIntegrationTest extends AbstractIntegrationTest {
     @Test
     void clientIsLockedPerIpAndClientIdWith429() throws Exception {
         for (int i = 0; i < 3; i++) {
-            mockMvc.perform(clientCredentials("device-service", "wrong", "203.0.113.80", i % 2 == 0))
+            mockMvc.perform(clientCredentials("device-service", "wrong", "203.0.113.80", true))
                     .andExpect(status().isUnauthorized())
                     .andExpect(jsonPath("$.error").value("invalid_client"))
                     .andExpect(jsonPath("$.error_description").doesNotExist());   // SAS default body kept
@@ -180,6 +180,17 @@ class LoginThrottleIntegrationTest extends AbstractIntegrationTest {
         mockMvc.perform(clientCredentials("device-service", "device-service-secret", "203.0.113.81", true))
                 .andExpect(status().isOk());
         mockMvc.perform(clientCredentials("furchert-ch", "furchert-ch-secret", "203.0.113.80", true))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void aMethodMismatchNeverCounts() throws Exception {
+        // device-service allows client_secret_basic only: client_secret_post fails before any secret check.
+        for (int i = 0; i < 11; i++) {
+            mockMvc.perform(clientCredentials("device-service", "wrong", "203.0.113.85", false))
+                    .andExpect(status().isUnauthorized());
+        }
+        mockMvc.perform(clientCredentials("device-service", "device-service-secret", "203.0.113.85", true))
                 .andExpect(status().isOk());
     }
 

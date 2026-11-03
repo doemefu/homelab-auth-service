@@ -11,6 +11,7 @@ import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.security.oauth2.server.authorization.authentication.ClientSecretAuthenticationProvider;
 import org.springframework.security.oauth2.server.authorization.authentication.OAuth2ClientAuthenticationToken;
+import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.context.request.RequestContextHolder;
@@ -22,8 +23,8 @@ import java.time.Duration;
  * Client-authentication half of the throttle (#104): wraps Spring Authorization Server's
  * {@link ClientSecretAuthenticationProvider}, so it covers every endpoint that authenticates clients
  * with {@code client_secret_basic}/{@code client_secret_post} and keys on exactly the client id that
- * SAS authenticates. Only {@code invalid_client} failures of registered clients count; unknown ids cost
- * no bcrypt check and are never tracked. A throttled attempt fails before the secret is checked, with
+ * SAS authenticates. Only {@code invalid_client} failures of a registered client with the presented method
+ * allowed count (a wrong secret); unknown ids and method mismatches cost no bcrypt check and never count. A throttled attempt fails before the secret is checked, with
  * {@link ThrottledException} (rendered as 429 by {@link ClientAuthenticationErrorHandler}).
  * <p>
  * Never a Spring bean: an AuthenticationProvider bean would join the global authentication manager.
@@ -76,7 +77,7 @@ public class ThrottlingClientSecretAuthenticationProvider implements Authenticat
             outcome = result != null ? LoginThrottle.Outcome.SUCCESS : LoginThrottle.Outcome.NONE;
             return result;
         } catch (OAuth2AuthenticationException e) {
-            if (OAuth2ErrorCodes.INVALID_CLIENT.equals(e.getError().getErrorCode()) && isRegistered(clientId)) {
+            if (OAuth2ErrorCodes.INVALID_CLIENT.equals(e.getError().getErrorCode()) && secretWasChecked(token)) {
                 outcome = LoginThrottle.Outcome.FAILURE;
             }
             throw e;
@@ -96,9 +97,15 @@ public class ThrottlingClientSecretAuthenticationProvider implements Authenticat
                 || ClientAuthenticationMethod.CLIENT_SECRET_POST.equals(method);
     }
 
-    private boolean isRegistered(String clientId) {
+    /**
+     * True when SAS got as far as the secret check: the client is registered and allows the presented
+     * method. A method mismatch fails before any bcrypt work and must not count, or anyone could fill the
+     * table with public client ids for free.
+     */
+    private boolean secretWasChecked(OAuth2ClientAuthenticationToken token) {
         try {
-            return registeredClients.findByClientId(clientId) != null;
+            RegisteredClient client = registeredClients.findByClientId(String.valueOf(token.getPrincipal()));
+            return client != null && client.getClientAuthenticationMethods().contains(token.getClientAuthenticationMethod());
         } catch (DataAccessException e) {
             // Never let bookkeeping replace the authentication error; this failure is not counted.
             log.warn("Login throttle: client lookup failed ({}); failure not counted", e.getClass().getSimpleName());

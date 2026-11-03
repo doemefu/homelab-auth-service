@@ -306,7 +306,7 @@ class LoginThrottleTest {
     }
 
     @Test
-    void fullMapOfLockedEntriesSendsNewKeysToTheThrottledOverflowKey() {
+    void fullMapOfLockedEntriesSendsNewKeysToThrottledOverflowShards() {
         props.setMaxEntries(4);
         props.setUser(new LoginThrottleProperties.Limits(1, Duration.ofMinutes(15), Duration.ofMinutes(5)));
         props.setIp(new LoginThrottleProperties.Limits(1000, Duration.ofMinutes(15), Duration.ofMinutes(15)));
@@ -353,6 +353,7 @@ class LoginThrottleTest {
 
     @Test
     void fullScanFindsAnEvictableEntryOutsideTheSample() {
+        throttle.setEvictionSample(0);   // the sample finds nothing: only the full scan can make room
         props.setMaxEntries(40);
         props.setUser(new LoginThrottleProperties.Limits(1, Duration.ofMinutes(15), Duration.ofMinutes(5)));
         for (int i = 0; i < 39; i++) {
@@ -362,6 +363,7 @@ class LoginThrottleTest {
         props.setUser(new LoginThrottleProperties.Limits(5, Duration.ofMinutes(15), Duration.ofMinutes(5)));
         throttle.complete(open.ticket(), Outcome.FAILURE);   // 1 failure, not locked: the only evictable one
         login("newcomer", null, Outcome.FAILURE);
+        assertThat(throttle.fullScans()).isEqualTo(1);
         assertThat(throttle.peek("user", "newcomer")).isNotNull();   // tracked under its own key
     }
 
