@@ -261,22 +261,28 @@ actions; playbook runs and restarts need a go. Order:
 2. Put the new values into the encrypted variables and run playbook 59 (it updates the Kubernetes Secrets; no pod
    restarts):
    - `grafana`, `homeassistant`: the auth-service key (`auth_service_grafana_client_secret` /
-     `auth_service_ha_client_secret`) gets the `{bcrypt}` value; the consumer's own configuration gets the plaintext.
+     `auth_service_ha_client_secret`) gets the `{bcrypt}` value. Their own configuration (set in the Grafana and Home
+     Assistant UIs) gets the plaintext in step 4, not now, because a UI change applies at once.
    - `device-service`, `n8n`, `litellm`, `furchert-ch`, `data-service`: one variable feeds both sides today (playbook 59
      adds `{noop}` for auth-service, the consumer gets the plaintext), so set it to the new plaintext. homelab#154
      splits them so that auth-service gets a `{bcrypt}` value.
    - `claude-mcp-hub`, `claude-club-mcp`: see their own sections below.
-3. Update the row with the `{bcrypt}` value (quoted heredoc, the hash contains `$`); from now on the old secret fails:
+3. Right after the playbook (merge nothing in between: a consumer pod restarted now would already use the new
+   plaintext against the old row), update the row with the `{bcrypt}` value (quoted heredoc, the hash contains `$`);
+   from now on the old secret fails:
 ```bash
 kubectl -n apps exec -i postgresql-0 -c postgresql -- psql -U postgres -d homelabdb -v ON_ERROR_STOP=1 <<'SQL'
 UPDATE oauth2_registered_client SET client_secret = '<{bcrypt} value>' WHERE client_id = '<client-id>' AND client_kind = 'sso';
 SQL
 # expected: UPDATE 1
 ```
-4. Restart the consumer at once so it reads the new plaintext (Flux apps: `kubectl -n apps delete pod -l app=<name>`).
-   A consumer that kept retrying the old secret may get `429` for up to 5 minutes ("Login throttle").
-5. Optional: restart auth-service (see "Restart service") so it reads the new configured value; the start-up WARN of
-   "Client secret not stored as {bcrypt}" shows which clients are still not `{bcrypt}`.
+4. At once: restart the consumer so it reads the new plaintext (Flux apps: `kubectl -n apps delete pod -l app=<name>`),
+   or for Grafana and Home Assistant enter it in their UI. A consumer that kept retrying the old secret may get `429`
+   for up to 5 minutes ("Login throttle").
+5. Verify with one login or token request of the client (and its logs show no `invalid_client`).
+6. Optional for `grafana`/`homeassistant`: restart auth-service (see "Restart service") so it reads the new configured
+   value and its start-up WARN for that client disappears. The five shared-variable clients keep a `{noop}` configured
+   value until homelab#154.
 
 ### Revoke a device client
 

@@ -168,7 +168,7 @@ Standard OIDC claims plus custom claims:
 ```
 
 **Device client (`client_credentials`) tokens** carry a `device_id` claim
-instead of `role` — used by Mosquitto as the MQTT username:
+instead of `role` — meant as the MQTT username once Mosquitto checks device tokens (infrastructure docs/053, draft):
 
 ```json
 {
