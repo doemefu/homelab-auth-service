@@ -536,6 +536,30 @@ class LoginThrottleTest {
     }
 
     @Test
+    void aCleanSourceOnAFloodedShardIsStillAdmittedInStrictMode() {
+        throttle.setClientCapacity(4);
+        for (int c = 0; c < 4; c++) {   // fill the per-source table with locked entries
+            for (int i = 0; i < 3; i++) {
+                client("other" + c, "10.98.0." + c, "guess", Outcome.FAILURE);
+            }
+        }
+        for (int i = 0; i < 5; i++) {   // strict mode for the hub (client id max 5)
+            client("claude-mcp-hub", "10.96.0." + i, "guess", Outcome.FAILURE);
+        }
+        // One failure on the shard of a victim source: below the shard bound (client max 3).
+        String victim = "160.79.104.10";
+        int shard = throttle.overflowShard("client", victim + "|claude-mcp-hub");
+        for (int i = 0; ; i++) {
+            String ip = "10.95." + (i / 256) + "." + (i % 256);
+            if (throttle.overflowShard("client", ip + "|claude-mcp-hub") == shard) {
+                client("claude-mcp-hub", ip, "guess", Outcome.FAILURE);
+                break;
+            }
+        }
+        assertThat(throttle.acquireClient("claude-mcp-hub", victim, "the-real-secret").admitted()).isTrue();
+    }
+
+    @Test
     void successesDoNotResetTheAllSourcesCount() {
         for (int i = 0; i < 4; i++) {
             client("furchert-ch", "10.99.0." + i, "guess", Outcome.FAILURE);

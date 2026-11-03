@@ -53,9 +53,9 @@ import java.util.concurrent.atomic.AtomicLong;
  *   (client IP, client_id). A secret that already authenticated this client since the last restart
  *   passes the lock, so once a client has authenticated, nobody else can lock it out. The client IP comes
  *   from a header that callers inside the cluster can forge, so a second, IP-independent key per client_id
- *   counts failures from all sources: past its threshold the client is in strict mode, where each source
- *   (tracked or overflow key) gets one attempt at a time and is rejected after one failure until its window
- *   ends, without a lock. A known secret is always admitted. Strict mode does not stop a caller who forges
+ *   counts failures from all sources: past its threshold the client is in strict mode, where each tracked
+ *   source gets one attempt at a time and is rejected after one failure until its window ends, without a
+ *   lock (overflow keys keep their own bound). A known secret is always admitted. Strict mode does not stop a caller who forges
  *   the header (#133).</li>
  * </ul>
  * Only failures count. {@code max-failures} failures inside {@code window} lock the key for
@@ -492,7 +492,8 @@ public class LoginThrottle {
             int max = limits.getMaxFailures();
             // Overflow keys are shared, so they never lock: a short window and the in-flight bound reject fast.
             boolean locked = !overflowSlot && c.lockedAt(now);
-            boolean full = c.failures() + c.inFlight() >= (strict ? 1 : max);
+            // Strict mode only tightens tracked per-source keys: an overflow shard is shared by bystanders.
+            boolean full = c.failures() + c.inFlight() >= (strict && !overflowSlot ? 1 : max);
             boolean reject = switch (exemption) {
                 case NONE -> locked || full;
                 case LOCK -> c.inFlight() >= max;
