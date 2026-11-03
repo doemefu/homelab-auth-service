@@ -439,6 +439,38 @@ SQL
 Further levels: remove the subject from the club MCP server's own subject allowlist (independent of this
 service), or remove the client entirely.
 
+### Login throttle (#104)
+
+`POST /login` and client authentication are throttled in memory (contract: `INTERFACES.md`, Important Notes 5).
+A lock logs one WARN without username or IP (a client lock names the client id):
+
+```bash
+kubectl -n apps logs -l app=auth-service --tail=-1 --request-timeout=10s | grep "Login throttle:"
+# Login throttle: username locked for 300 s after 10 failed attempts
+# Login throttle: client 'device-service' locked for 300 s after 10 failed attempts
+```
+
+- Every minute with rejections: `Login throttle: rejected <n> attempts since the last report (username: <a> locked, <b> in-flight bound, <c> via overflow key; ...)` (counts only).
+- **Unlock early:** restart the pod (see "Restart service"). That clears every counter, the known-good list and the
+  client fingerprints.
+- **Client locked after a secret rotation:** a client that kept retrying with its old secret may get `429` for up to
+  5 minutes; it recovers by itself once it uses the new secret after the lock.
+- **Kill switch:** add `APP_LOGIN_THROTTLE_ENABLED` with value `"false"` to the container `env` in
+  `k8s/deployment.yaml` (pull request, merge, Flux applies it). Thresholds can be changed the same way, for example
+  `APP_LOGIN_THROTTLE_USER_MAX_FAILURES`; durations need a unit (`15m`), and values under 1 s fail start-up.
+- **Owner kept out right after a restart:** a restart (every merge) empties the known-network list, so a targeted
+  attack on the owner's username can block new logins until he logs in from a known network again. Recovery: set
+  the kill switch by pull request (the GitHub web UI needs no auth-service login), or raise
+  `APP_LOGIN_THROTTLE_USER_MAX_FAILURES` the same way.
+- **Rollback:** `git revert` the merge commit on `main`; CI builds the image and Flux rolls it out.
+- **Live check:** the login form needs a session cookie and its CSRF token, and the Cloudflare edge rule allows 5
+  requests per 10 s per IP, so space attempts at least 3 s apart. From the home network every failure also counts
+  for the home IP (20 per 15 min, then 15 min lock, and the known-good exemption does not lift an IP lock when the
+  username is locked too), so run such a test at most once per 15 minutes or from another network. Failed test
+  logins appear as login events in data-service.
+- The edge rule of spec 080 §4.7 (D32) stays; it bounds bcrypt CPU per source address, which the in-app throttle
+  does not.
+
 ### Remove or rename the claude-club-mcp client
 
 Same procedure as "Remove or rename the claude-mcp-hub client" with these differences: skip the hub kill
@@ -506,6 +538,7 @@ Common: Insufficient CPU/memory, nodeSelector mismatch, image not available for 
 | `CLAUDE_CLUB_MCP_CLIENT_SECRET` | `homelab-auth-secrets` (`claude-club-mcp-client-secret`) | No | `claude-club-mcp` client secret, `{bcrypt}` cost 10; blank = client not seeded |
 | `CLAUDE_CLUB_MCP_ALLOWED_USERS` | `homelab-auth-secrets` (`claude-club-mcp-allowed-users`) | No | Usernames allowed to use `claude-club-mcp`, comma-separated, exact spelling; empty = everyone rejected |
 | `SENTRY_DSN` | `sentry-dsn` | No | Sentry error tracking |
+| `APP_LOGIN_THROTTLE_ENABLED` | Config | No | `false` disables the failed-attempt throttle (#104); default `true` |
 
 ---
 

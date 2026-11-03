@@ -1,5 +1,7 @@
 package ch.furchert.homelab.auth.config;
 
+import ch.furchert.homelab.auth.security.LoginThrottle;
+import ch.furchert.homelab.auth.security.LoginThrottleFilter;
 import jakarta.servlet.DispatcherType;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -18,6 +20,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -77,10 +80,11 @@ public class SecurityConfig {
     /**
      * Chain 3: stateful form-login chain for the OIDC login page and actuator.
      * CSRF is enabled (default) to protect the session-based login form.
+     * The failed-attempt throttle (#104) runs right before the form-login filter, after CSRF.
      */
     @Bean
     @Order(3)
-    public SecurityFilterChain loginSecurityFilterChain(HttpSecurity http) {
+    public SecurityFilterChain loginSecurityFilterChain(HttpSecurity http, LoginThrottle loginThrottle) {
         http
                 .securityMatcher(LOGIN_URL, "/actuator/**", "/swagger-ui.html", "/swagger-ui/**", "/api-docs", "/api-docs/**")
                 .authorizeHttpRequests(auth -> auth
@@ -93,7 +97,9 @@ public class SecurityConfig {
                 )
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED)
-                );
+                )
+                .addFilterBefore(new LoginThrottleFilter(loginThrottle, LOGIN_URL),
+                        UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }

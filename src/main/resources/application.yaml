@@ -150,6 +150,17 @@ app:
   login-events:
     hmac-key: "${LOGIN_EVENT_HMAC_KEY:}"
 
+  # Failed-attempt throttle (#104, INTERFACES.md): temporary in-memory locks on POST /login (per username
+  # and per client IP) and on client authentication (per client IP + client_id). Only failures count; a
+  # lock never touches users.status. Kill switch: APP_LOGIN_THROTTLE_ENABLED=false.
+  login-throttle:
+    enabled: true
+    user: { max-failures: 10, window: 15m, lock-duration: 5m }
+    ip: { max-failures: 20, window: 15m, lock-duration: 15m }
+    client: { max-failures: 10, window: 5m, lock-duration: 5m }
+    known-good-ttl: 30d
+    max-entries: 30000
+
 management:
   endpoints:
     web:

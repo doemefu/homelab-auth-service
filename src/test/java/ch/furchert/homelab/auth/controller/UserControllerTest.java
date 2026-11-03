@@ -7,6 +7,7 @@ import ch.furchert.homelab.auth.dto.UserPage;
 import ch.furchert.homelab.auth.dto.UserResponse;
 import ch.furchert.homelab.auth.entity.Role;
 import ch.furchert.homelab.auth.exception.ResourceNotFoundException;
+import ch.furchert.homelab.auth.security.LoginThrottle;
 import ch.furchert.homelab.auth.service.UserService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -40,6 +41,10 @@ class UserControllerTest {
 
     @Autowired
     ObjectMapper objectMapper;
+
+    // SecurityConfig's login chain needs the #104 throttle; a mock reports "disabled" (filter passes through).
+    @MockitoBean
+    LoginThrottle loginThrottle;
 
     @MockitoBean
     JwtDecoder jwtDecoder;
