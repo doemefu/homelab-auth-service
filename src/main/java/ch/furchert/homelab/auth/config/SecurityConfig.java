@@ -37,7 +37,8 @@ public class SecurityConfig {
     private static final String ADMIN = "ADMIN";
 
     /**
-     * Login page CSP (#106). Inline styles only (login.html has a style block, no scripts, no user content).
+     * Login page CSP (#106): same-origin and inline styles, no scripts (login.html has a style block and no
+     * user content).
      * No {@code form-action}: browsers apply it to every redirect after the login POST, and the chain ends
      * at the client's redirect URI on another origin, so it would break SSO.
      */

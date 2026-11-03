@@ -178,11 +178,17 @@ In production the key comes from the owner's encrypted variables (`auth_service_
 3. Run playbook 59. The mounted files change; the running pod keeps signing with the old key from memory.
 4. Merge the `kid` pull request right away. The Flux rollout starts a pod that loads the new key with the new `kid`.
    Between steps 3 and 4 any restart (another merge, a node reset) would sign with the new key under the old `kid`, so
-   keep that window short and merge nothing else in it.
+   keep that window short and merge nothing else in it (`flux reconcile kustomization auth-service -n flux-system`
+   right after the merge shortens it).
+5. Verify: `curl -s https://auth.furchert.ch/oauth2/jwks | jq -r '.keys[].kid'` shows the new `kid`; the pod is new
+   and its start-up log has no key error; a fresh sign-in to furchert-ch `/dashboard` and a claude.ai connector call
+   work. Rollback: put the old key pair back into the encrypted variables, run playbook 59, revert the `kid` pull
+   request.
 
 Effect: access and ID tokens signed with the old key fail at every consumer once it drops the old `kid`; refresh
-tokens are opaque database rows and keep working, so clients recover with their next refresh. An old
-`id_token_hint` no longer verifies, so `/connect/logout` with it answers `400`.
+tokens are opaque database rows and keep working, so clients recover with their next refresh. RP-initiated logout
+with an old `id_token_hint` keeps working while its authorization row exists (about 7 days); after the row is purged
+the hint fails the signature check and `/connect/logout` answers `400` without ending the IdP session.
 
 ### Add new OIDC client
 1. Generate the encoded secret. Create the plaintext, e.g. `openssl rand -hex 32` (bcrypt uses only the first 72
