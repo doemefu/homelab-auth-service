@@ -72,29 +72,31 @@ class N8nClientRemovalMigrationTest extends AbstractIntegrationTest {
         assertThat(count("SELECT count(*) FROM oauth2_authorization WHERE registered_client_id = ?", n8nId)).isZero();
         assertThat(count("SELECT count(*) FROM oauth2_authorization_consent WHERE registered_client_id = ?", n8nId))
                 .isZero();
+        // Only this test's own rows of the other client are checked: the shared test database may hold more.
         assertThat(count("SELECT count(*) FROM oauth2_registered_client WHERE id = ?", otherId)).isEqualTo(1);
-        assertThat(count("SELECT count(*) FROM oauth2_authorization WHERE registered_client_id = ?", otherId))
-                .isEqualTo(1);
-        assertThat(count("SELECT count(*) FROM oauth2_authorization_consent WHERE registered_client_id = ?", otherId))
-                .isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM oauth2_authorization WHERE id = ?", "auth-" + otherId)).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM oauth2_authorization_consent WHERE registered_client_id = ? "
+                + "AND principal_name = 'someone'", otherId)).isEqualTo(1);
     }
 
     @Test
-    void rerunningIsANoOp() {
+    void runningItAgainIsHarmless() {
         runV9();
-        int clients = count("SELECT count(*) FROM oauth2_registered_client");
+        runV9();   // must not fail on a database where the row is already gone
 
-        runV9();
-
-        assertThat(count("SELECT count(*) FROM oauth2_registered_client")).isEqualTo(clients);
+        assertThat(count("SELECT count(*) FROM oauth2_registered_client WHERE client_id = 'n8n'")).isZero();
+        assertThat(count("SELECT count(*) FROM oauth2_registered_client WHERE id = ?", otherId)).isEqualTo(1);
     }
 
     @Test
-    void aNonSsoRowWithTheIdIsKept() {
+    void aDeviceClientWithTheSameIdIsKeptWithItsRows() {
         jdbcTemplate.update("UPDATE oauth2_registered_client SET client_kind = 'device' WHERE id = ?", n8nId);
 
         runV9();
 
         assertThat(count("SELECT count(*) FROM oauth2_registered_client WHERE id = ?", n8nId)).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM oauth2_authorization WHERE id = ?", "auth-" + n8nId)).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM oauth2_authorization_consent WHERE registered_client_id = ? "
+                + "AND principal_name = 'someone'", n8nId)).isEqualTo(1);
     }
 }
