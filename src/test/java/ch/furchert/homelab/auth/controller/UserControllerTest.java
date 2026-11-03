@@ -41,6 +41,10 @@ class UserControllerTest {
     @Autowired
     ObjectMapper objectMapper;
 
+    // SecurityConfig's login chain needs the #104 throttle; a mock reports "disabled" (filter passes through).
+    @MockitoBean
+    ch.furchert.homelab.auth.security.LoginThrottle loginThrottle;
+
     @MockitoBean
     JwtDecoder jwtDecoder;
 

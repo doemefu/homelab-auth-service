@@ -4,12 +4,15 @@ import ch.furchert.homelab.auth.entity.Role;
 import ch.furchert.homelab.auth.entity.User;
 import ch.furchert.homelab.auth.repository.UserRepository;
 import ch.furchert.homelab.auth.security.AuditingAuthorizationConsentService;
+import ch.furchert.homelab.auth.security.ClientAuthenticationErrorHandler;
 import ch.furchert.homelab.auth.security.ClientAuthorizationRequestValidator;
 import ch.furchert.homelab.auth.security.IdTokenRejectingValidator;
+import ch.furchert.homelab.auth.security.LoginThrottle;
 import ch.furchert.homelab.auth.security.OidcUserInfoMapper;
 import ch.furchert.homelab.auth.security.ResourceIndicatorPolicy;
 import ch.furchert.homelab.auth.security.ResourceIndicatorTokenRequestGuard;
 import ch.furchert.homelab.auth.security.RsaKeyProvider;
+import ch.furchert.homelab.auth.security.ThrottlingClientSecretAuthenticationProvider;
 import ch.furchert.homelab.auth.service.ClientKindLookup;
 import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.RSAKey;
@@ -48,6 +51,7 @@ import org.springframework.security.oauth2.server.authorization.JdbcOAuth2Author
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationConsentService;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService;
 import org.springframework.security.oauth2.server.authorization.OAuth2TokenType;
+import org.springframework.security.oauth2.server.authorization.authentication.ClientSecretAuthenticationProvider;
 import org.springframework.security.oauth2.server.authorization.authentication.OAuth2AuthorizationCodeRequestAuthenticationProvider;
 import org.springframework.security.oauth2.server.authorization.authentication.OAuth2AuthorizationCodeRequestAuthenticationValidator;
 import org.springframework.security.oauth2.server.authorization.client.JdbcRegisteredClientRepository;
@@ -89,10 +93,20 @@ public class AuthorizationServerConfig {
      */
     @Bean
     @Order(1)
-    public SecurityFilterChain authorizationServerSecurityFilterChain(HttpSecurity http) {
+    public SecurityFilterChain authorizationServerSecurityFilterChain(HttpSecurity http, LoginThrottle loginThrottle,
+                                                                      RegisteredClientRepository registeredClientRepository) {
         http
                 .securityMatcher("/oauth2/**", "/.well-known/**", "/userinfo", "/connect/**")
                 .oauth2AuthorizationServer(as -> as
+                        // Failed-attempt throttle (#104) around the bcrypt client-secret check, for every
+                        // endpoint that authenticates clients; 429 for throttled attempts, SAS default otherwise.
+                        .clientAuthentication(client -> client
+                                .authenticationProviders(providers -> providers.replaceAll(provider ->
+                                        provider instanceof ClientSecretAuthenticationProvider secret
+                                                ? new ThrottlingClientSecretAuthenticationProvider(
+                                                        secret, loginThrottle, registeredClientRepository)
+                                                : provider))
+                                .errorResponseHandler(new ClientAuthenticationErrorHandler()))
                         .authorizationEndpoint(authorization -> authorization.authenticationProviders(providers ->
                                 providers.forEach(provider -> {
                                     if (provider instanceof OAuth2AuthorizationCodeRequestAuthenticationProvider codeRequest) {

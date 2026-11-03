@@ -61,6 +61,7 @@ auth-service (this service)
 - **OIDC Client Secrets:** `{bcrypt}` hashes in production; other encodings such as `{noop}` (plaintext, local development) are accepted but logged as a WARN at start-up
 - **Session Management:** Stateful sessions for OIDC flow, stateless JWT for API
 - **CSRF Protection:** Enabled for form-based login, disabled for API endpoints
+- **Failed-attempt throttle:** temporary in-memory locks on `POST /login` (per username and per client IP) and on client authentication (per client IP and client id); details in `INTERFACES.md` Important Notes
 
 ---
 
