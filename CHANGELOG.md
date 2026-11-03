@@ -4,6 +4,7 @@
 
 ### Security
 
+- The unused `n8n` OIDC client is removed (the n8n community edition cannot use OIDC): no longer configured, `N8N_CLIENT_SECRET` no longer read, and Flyway V9 deletes its row, authorizations and consents (its row held a plaintext `{noop}` secret).
 - Operator runbooks in `DEPLOYMENT.md` § Runbooks: SSO client-secret rotation, device-client revocation (stops new tokens; Mosquitto does not check device tokens yet), registered-client inspection, `client_kind` cache (#53).
 - `GET /api/v1/users/{id}` and `POST /api/v1/users/{id}/reset-password` answer `404` (same body as an absent id) when a non-admin asks for another user's id, instead of `403`, so ids cannot be probed (#106).
 - The login page sends a `Content-Security-Policy` (`default-src 'none'`, same-origin and inline styles, no scripts, `frame-ancestors 'none'`; no `form-action`, which would block the redirect to the client after sign-in). The session cookie is explicitly `Secure; HttpOnly; SameSite=Lax` (#106).

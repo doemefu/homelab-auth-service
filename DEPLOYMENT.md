@@ -22,7 +22,7 @@ Comprehensive deployment and operational guidance for auth-service.
 |--------|------|---------|
 | `homelab-db-credentials` | `username`, `password` | Database |
 | `homelab-auth-rsa-keys` | `private.pem`, `public.pem` | JWT signing keys |
-| `homelab-auth-secrets` | Client secrets for Grafana, Home Assistant, device-service, n8n, LiteLLM; optional `claude-mcp-hub-client-secret`, `claude-mcp-hub-allowed-users`, `claude-club-mcp-client-secret`, `claude-club-mcp-allowed-users` | OIDC client auth |
+| `homelab-auth-secrets` | Client secrets for Grafana, Home Assistant, device-service, LiteLLM; optional `claude-mcp-hub-client-secret`, `claude-mcp-hub-allowed-users`, `claude-club-mcp-client-secret`, `claude-club-mcp-allowed-users` | OIDC client auth |
 | `sentry-dsn` | `dsn` | Error tracking (optional) |
 
 ### Cloudflare Tunnel
@@ -76,7 +76,6 @@ kubectl create secret generic homelab-auth-secrets -n apps \
   --from-literal=grafana-client-secret='{bcrypt}<hash>' \
   --from-literal=ha-client-secret='{bcrypt}<hash>' \
   --from-literal=device-service-client-secret='{bcrypt}<hash>' \
-  --from-literal=n8n-client-secret-authservice='{bcrypt}<hash>' \
   --from-literal=litellm-client-secret-authservice='{bcrypt}<hash>'
 rm private.pem public.pem
 ```
@@ -207,7 +206,7 @@ value:
 
 ```bash
 kubectl -n apps logs -l app=auth-service --tail=-1 --request-timeout=10s | grep "is not a {bcrypt} hash"
-# SSO client 'n8n': client secret (configured value and stored row) is not a {bcrypt} hash; ...
+# SSO client 'litellm': client secret (configured value) is not a {bcrypt} hash; ...
 ```
 
 - **configured value:** the env var (Secret key in `homelab-auth-secrets`) is not `{bcrypt}`. A database restore or a
@@ -234,7 +233,7 @@ f=$(mktemp); printf 'x:%s\n' '<hash without the {bcrypt} prefix>' > "$f"; htpass
 2. Configured value: Grafana and Home Assistant keys are written verbatim by playbook 59 from the owner's encrypted
    variables `auth_service_grafana_client_secret` / `auth_service_ha_client_secret`; change the variable and run
    playbook 59 (owner). A direct `kubectl patch` of the key is reverted by the next playbook run. For
-   `device-service`, `n8n`, `litellm`, `furchert-ch` and `data-service` playbook 59 adds the `{noop}` prefix itself
+   `device-service`, `litellm`, `furchert-ch` and `data-service` playbook 59 adds the `{noop}` prefix itself
    and gives the consumer the same variable, so their switch needs the playbook change of homelab#154 first. The
    consumer keeps the plaintext in its own Secret key.
 3. Stored row (only when the WARN names it): trigger one login or token request of the client. Spring Authorization
@@ -263,7 +262,7 @@ actions; playbook runs and restarts need a go. Order:
    - `grafana`, `homeassistant`: the auth-service key (`auth_service_grafana_client_secret` /
      `auth_service_ha_client_secret`) gets the `{bcrypt}` value. Their own configuration (set in the Grafana and Home
      Assistant UIs) gets the plaintext in step 4, not now, because a UI change applies at once.
-   - `device-service`, `n8n`, `litellm`, `furchert-ch`, `data-service`: one variable feeds both sides today (playbook 59
+   - `device-service`, `litellm`, `furchert-ch`, `data-service`: one variable feeds both sides today (playbook 59
      adds `{noop}` for auth-service, the consumer gets the plaintext), so set it to the new plaintext. homelab#154
      splits them so that auth-service gets a `{bcrypt}` value.
    - `claude-mcp-hub`, `claude-club-mcp`: see their own sections below.
@@ -281,7 +280,7 @@ SQL
    for up to 5 minutes ("Login throttle").
 5. Verify with one login or token request of the client (and its logs show no `invalid_client`).
 6. Optional for `grafana`/`homeassistant`: restart auth-service (see "Restart service") so it reads the new configured
-   value and its start-up WARN for that client disappears. The five shared-variable clients keep a `{noop}` configured
+   value and its start-up WARN for that client disappears. The four shared-variable clients keep a `{noop}` configured
    value until homelab#154.
 
 ### Revoke a device client
@@ -631,7 +630,6 @@ Common: Insufficient CPU/memory, nodeSelector mismatch, image not available for 
 | `GRAFANA_CLIENT_SECRET` | `homelab-auth-secrets` | Yes | Grafana OIDC client secret |
 | `HA_CLIENT_SECRET` | `homelab-auth-secrets` | Yes | Home Assistant OIDC client secret |
 | `DEVICE_SERVICE_CLIENT_SECRET` | `homelab-auth-secrets` | Yes | device-service OIDC client secret |
-| `N8N_CLIENT_SECRET` | `homelab-auth-secrets` | Yes | n8n OIDC client secret |
 | `LITELLM_CLIENT_SECRET` | `homelab-auth-secrets` | Yes | LiteLLM OIDC client secret |
 | `CLAUDE_MCP_HUB_CLIENT_SECRET` | `homelab-auth-secrets` (`claude-mcp-hub-client-secret`) | No | `claude-mcp-hub` client secret, `{bcrypt}` cost 10; blank = client not seeded |
 | `CLAUDE_MCP_HUB_ALLOWED_USERS` | `homelab-auth-secrets` (`claude-mcp-hub-allowed-users`) | No | Usernames allowed to use `claude-mcp-hub`, comma-separated, exact spelling; empty = everyone rejected |

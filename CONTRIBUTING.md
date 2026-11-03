@@ -123,7 +123,6 @@ export DB_PASSWORD=homelab
 export GRAFANA_CLIENT_SECRET="{noop}local-dev-secret"
 export HA_CLIENT_SECRET="{noop}local-dev-secret"
 export DEVICE_SERVICE_CLIENT_SECRET="{noop}local-dev-secret"
-export N8N_CLIENT_SECRET="{noop}local-dev-secret"
 export LITELLM_CLIENT_SECRET="{noop}local-dev-secret"
 ```
 

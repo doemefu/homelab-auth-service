@@ -7,7 +7,7 @@ Repo-specific facts for the `homelab-workflow` plugin agents; each agent reads o
 - Contract file: `INTERFACES.md` (OIDC endpoints, REST admin API, JWKS, JWT/ID-token claims). Cross-repo specs go to `../docs/`, not inline here.
 - Read first: `CLAUDE.md`, `INTERFACES.md`, `docs/PLAN.md`, and the touched code under `src/main/java/ch/furchert/homelab/auth/` (`config/`, `controller/`, `dto/`).
 - A contract change must also define: OIDC/OAuth2 surface affected (token endpoint, JWKS `/oauth2/jwks`, discovery document, ID/access-token claims), Flyway migration filename + columns + constraints and which other services read that table, env vars / K8s secret keys (name and purpose, never values), role/scope per endpoint.
-- Rollout order for breaking changes: this service ships first, consumers adapt after. Consumers: device-service and data-service (JWKS validation), furchert-ch (OIDC login + `client_credentials` with scope `netmon:read`), Open WebUI, n8n, LiteLLM, Grafana, Home Assistant (OIDC clients).
+- Rollout order for breaking changes: this service ships first, consumers adapt after. Consumers: device-service and data-service (JWKS validation), furchert-ch (OIDC login + `client_credentials` with scope `netmon:read`), LiteLLM, Grafana, Home Assistant (OIDC clients; Open WebUI has no OIDC configured, n8n community edition cannot use OIDC).
 - Hand-back line: "`INTERFACES.md` updated — implementer can start."
 
 ## implementer
@@ -56,11 +56,11 @@ Repo-specific facts for the `homelab-workflow` plugin agents; each agent reads o
 - OIDC/JWT/security: does the plan alter claims, scopes, grant types or endpoint paths documented in `INTERFACES.md`, and update it in the same plan? All authed endpoints enforced in `SecurityConfig`/`AuthorizationServerConfig` (no stray `permitAll()`)? Role checks at the right layer?
 - Tests: Testcontainers for DB integration; unit test per new public service method; MockMvc per endpoint covering success, validation error, unauthorized, not found.
 - K8s (only if `k8s/` touched): resource limits, liveness probe, pinned image tag, `secretKeyRef`, namespace `apps`.
-- Architecture: business logic in service layer; works after a pod restart (no required in-memory state); does it break a consumer (device-service, data-service, furchert-ch, Open WebUI/n8n/LiteLLM) outside the plan's scope? New dependency explicitly approved?
+- Architecture: business logic in service layer; works after a pod restart (no required in-memory state); does it break a consumer (device-service, data-service, furchert-ch, LiteLLM/Grafana/Home Assistant) outside the plan's scope? New dependency explicitly approved?
 
 ## doc-auditor
 
-- Context: OIDC/OAuth2 server deployed to K3s namespace `apps` via Cloudflare Tunnel; Secrets provisioned by the `infrastructure` repo's `infra/playbooks/59_app_services.yml`. Consumers: device-service, data-service, furchert-ch, Grafana, Home Assistant, n8n, LiteLLM, Open WebUI.
+- Context: OIDC/OAuth2 server deployed to K3s namespace `apps` via Cloudflare Tunnel; Secrets provisioned by the `infrastructure` repo's `infra/playbooks/59_app_services.yml`. Consumers: device-service, data-service, furchert-ch, Grafana, Home Assistant, LiteLLM.
 - Read in full: `README.md`, `OVERVIEW.md`, `INTERFACES.md`, `DEPLOYMENT.md`, `CONTRIBUTING.md`, `CHANGELOG.md`, `docs/INDEX.md`, `docs/DEVELOPMENT.md`.
 - `README.md`: milestone/status table current; new prerequisite listed.
 - `OVERVIEW.md`: service description, feature list, API summary accurate.
