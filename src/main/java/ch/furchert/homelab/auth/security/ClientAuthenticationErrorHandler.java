@@ -2,6 +2,7 @@ package ch.furchert.homelab.auth.security;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.converter.HttpMessageConverter;
@@ -23,6 +24,7 @@ import java.io.IOException;
  * clear the context, {@code 401} for {@code invalid_client} else {@code 400}, body with the error code
  * only.
  */
+@Slf4j
 public class ClientAuthenticationErrorHandler implements AuthenticationFailureHandler {
 
     private final HttpMessageConverter<OAuth2Error> errorConverter = new OAuth2ErrorHttpMessageConverter();
@@ -39,6 +41,10 @@ public class ClientAuthenticationErrorHandler implements AuthenticationFailureHa
             httpResponse.getHeaders().setCacheControl("no-store");
             errorConverter.write(throttled.getError(), null, httpResponse);
             return;
+        }
+        if (!(exception instanceof OAuth2AuthenticationException)) {
+            // Unreachable with SAS 7.1.2 (its filter only passes OAuth2AuthenticationException); fail closed, visibly.
+            log.error("Unexpected client authentication failure type {}", exception.getClass().getName());
         }
         OAuth2Error error = exception instanceof OAuth2AuthenticationException oauth2
                 ? oauth2.getError() : new OAuth2Error(OAuth2ErrorCodes.INVALID_CLIENT);

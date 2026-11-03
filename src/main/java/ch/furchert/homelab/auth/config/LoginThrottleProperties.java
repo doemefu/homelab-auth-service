@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.validator.constraints.time.DurationMin;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
@@ -40,6 +41,7 @@ public class LoginThrottleProperties {
 
     /** A (username, network) pair with a successful login is exempt from the username lock this long. */
     @NotNull
+    @DurationMin(seconds = 1)
     private Duration knownGoodTtl = Duration.ofDays(30);
 
     /** Upper bound of tracked username keys and of tracked IP keys (each). */
@@ -53,10 +55,13 @@ public class LoginThrottleProperties {
         @Positive
         private int maxFailures;
 
+        /** At least 1 s: Boot reads a unit-less value as milliseconds, which would disable the lock. */
         @NotNull
+        @DurationMin(seconds = 1)
         private Duration window;
 
         @NotNull
+        @DurationMin(seconds = 1)
         private Duration lockDuration;
 
         public Limits() {

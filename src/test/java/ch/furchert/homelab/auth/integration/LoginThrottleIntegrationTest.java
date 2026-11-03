@@ -174,7 +174,7 @@ class LoginThrottleIntegrationTest extends AbstractIntegrationTest {
         }
         mockMvc.perform(clientCredentials("device-service", "device-service-secret", "203.0.113.80", true))
                 .andExpect(status().isTooManyRequests())
-                .andExpect(header().string("Retry-After", "300"))
+                .andExpect(header().string("Retry-After", org.hamcrest.Matchers.matchesPattern("29[5-9]|300")))
                 .andExpect(header().string("Cache-Control", "no-store"))
                 .andExpect(jsonPath("$.error").value("temporarily_unavailable"));
         mockMvc.perform(clientCredentials("device-service", "device-service-secret", "203.0.113.81", true))

@@ -31,29 +31,33 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.EnumMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Failed-attempt throttle with temporary locks (#104). In memory only: one replica, and a restart
- * clears every counter.
+ * clears every counter, the known-good networks and the client fingerprints.
  * <ul>
  *   <li>Form login ({@link LoginThrottleFilter}): one key per submitted username (lower-cased, trimmed)
  *   and one per client IP (IPv6 aggregated to its /64). A (username, network) pair that logged in
- *   successfully within {@code known-good-ttl} is exempt from the username lock, and from the IP lock
- *   unless the username is locked as well.</li>
+ *   successfully within {@code known-good-ttl} passes the username lock, and the IP lock unless the
+ *   username is locked as well; it is still bounded by the number of attempts in flight.</li>
  *   <li>Client authentication ({@link ThrottlingClientSecretAuthenticationProvider}): one key per
- *   (client IP, client_id). A secret that already authenticated this client in this process passes
- *   the lock, so nobody can lock a working client out.</li>
+ *   (client IP, client_id). A secret that already authenticated this client since the last restart
+ *   passes the lock, so once a client has authenticated, nobody else can lock it out.</li>
  * </ul>
  * Only failures count. {@code max-failures} failures inside {@code window} lock the key for
  * {@code lock-duration}; attempts during a lock are rejected before any credential check and are not
- * counted, so a lock always ends. Username and IP keys also bound attempts in flight. Keys are SHA-256
- * digests, so neither huge inputs nor plaintext usernames are kept. Log lines never contain a username,
- * an IP or a secret; client locks name the (registered) client id.
+ * counted, so a lock always ends. A success resets the count but never lifts an active lock. Failures
+ * plus attempts in flight never exceed {@code max-failures}. Keys are salted SHA-256 digests, so
+ * neither huge inputs nor plaintext usernames are kept and table positions cannot be predicted. When a
+ * table is full, new keys share one overflow key per table (still throttled). Log lines never contain
+ * a username, an IP or a secret; client locks name the (registered) client id.
  * {@code users.status} is never touched and no authorization is revoked.
  */
 @Component
@@ -66,11 +70,12 @@ public class LoginThrottle {
     public static final String OUTCOME_ATTRIBUTE = LoginThrottle.class.getName() + ".OUTCOME";
 
     static final int MAX_CLIENT_ENTRIES = 10_000;
-    static final int MAX_KNOWN_GOOD_ENTRIES = 10_000;
+    static final int MAX_KNOWN_GOOD_USERS = 10_000;
+    static final int KNOWN_GOOD_NETWORKS_PER_USER = 8;
     static final int FINGERPRINTS_PER_CLIENT = 4;
     private static final int EVICTION_SAMPLE = 16;
-    private static final long FULL_PURGE_INTERVAL_MILLIS = 10_000;
-    private static final long FULL_WARNING_INTERVAL_MILLIS = 60_000;
+    private static final long FULL_SCAN_INTERVAL_MILLIS = 10_000;
+    private static final long WARNING_INTERVAL_MILLIS = 60_000;
 
     enum Kind {
         USER("username"), IP("client IP"), CLIENT("client");
@@ -82,7 +87,10 @@ public class LoginThrottle {
         }
     }
 
-    /** SHA-256 digest of {@code kind:value}; fixed size whatever the input. */
+    /** How far an attempt is exempt: not at all, from locks only (in-flight bound kept), or completely. */
+    private enum Exemption { NONE, LOCK, FULL }
+
+    /** Salted SHA-256 digest of {@code kind:value}; fixed size whatever the input. */
     record Key(long a, long b, long c, long d) {
     }
 
@@ -103,34 +111,43 @@ public class LoginThrottle {
     }
 
     private record Reservation(boolean admitted, Slot slot, boolean lockedAtAcquire, Duration retryAfter) {
-        static Reservation untracked() {
-            return new Reservation(true, null, false, Duration.ZERO);
-        }
     }
 
-    /** Handle of one admitted attempt; complete it exactly once with {@link #complete}. */
+    /** Handle of one admitted attempt; only its first {@link #complete} counts. */
     public static final class Ticket {
         private final List<Slot> slots;
-        private final Key knownGoodKey;
+        private final Key userKey;
+        private final Key networkKey;
         private final String clientId;
         private final byte[] fingerprint;
+        private final boolean fingerprintExempt;
+        private final AtomicBoolean completed = new AtomicBoolean();
 
-        private Ticket(List<Slot> slots, Key knownGoodKey, String clientId, byte[] fingerprint) {
+        private Ticket(List<Slot> slots, Key userKey, Key networkKey, String clientId, byte[] fingerprint,
+                       boolean fingerprintExempt) {
             this.slots = slots;
-            this.knownGoodKey = knownGoodKey;
+            this.userKey = userKey;
+            this.networkKey = networkKey;
             this.clientId = clientId;
             this.fingerprint = fingerprint;
+            this.fingerprintExempt = fingerprintExempt;
         }
     }
 
     private final LoginThrottleProperties properties;
     private final Clock clock;
-    private final Map<Kind, ConcurrentHashMap<Key, Counter>> counters = new EnumMap<>(Kind.class);
-    private final ConcurrentHashMap<Key, Long> knownGood = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, List<byte[]>> clientFingerprints = new ConcurrentHashMap<>();
+    private final byte[] keySalt = new byte[32];
     private final byte[] fingerprintKey = new byte[32];
-    private final AtomicLong lastFullPurge = new AtomicLong(Long.MIN_VALUE / 2);
-    private final AtomicLong lastFullWarning = new AtomicLong(Long.MIN_VALUE / 2);
+    private final Map<Kind, ConcurrentHashMap<Key, Counter>> counters = new EnumMap<>(Kind.class);
+    private final Map<Kind, Key> overflowKeys = new EnumMap<>(Kind.class);
+    /** username key → (network key → last success); a few networks per username. */
+    private final ConcurrentHashMap<Key, Map<Key, Long>> knownGood = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, List<byte[]>> clientFingerprints = new ConcurrentHashMap<>();
+    private final Map<Kind, AtomicLong> lastFullScan = new EnumMap<>(Kind.class);
+    private final Map<Kind, AtomicLong> rejectedLocked = new EnumMap<>(Kind.class);
+    private final Map<Kind, AtomicLong> rejectedInFlight = new EnumMap<>(Kind.class);
+    private final Map<Kind, AtomicLong> overflowed = new EnumMap<>(Kind.class);
+    private final AtomicBoolean missingContextWarned = new AtomicBoolean();
 
     @Autowired
     public LoginThrottle(LoginThrottleProperties properties) {
@@ -140,11 +157,28 @@ public class LoginThrottle {
     LoginThrottle(LoginThrottleProperties properties, Clock clock) {
         this.properties = properties;
         this.clock = clock;
+        SecureRandom random = new SecureRandom();
+        random.nextBytes(keySalt);          // per process: table positions cannot be precomputed
+        random.nextBytes(fingerprintKey);   // per process: fingerprints are only compared in this process
         for (Kind kind : Kind.values()) {
             counters.put(kind, new ConcurrentHashMap<>());
+            overflowKeys.put(kind, key("overflow", kind.name()));
+            lastFullScan.put(kind, new AtomicLong(Long.MIN_VALUE / 2));
+            rejectedLocked.put(kind, new AtomicLong());
+            rejectedInFlight.put(kind, new AtomicLong());
+            overflowed.put(kind, new AtomicLong());
         }
-        // Per-process key: fingerprints are only ever compared inside this process.
-        new SecureRandom().nextBytes(fingerprintKey);
+        if (properties.isEnabled()) {
+            log.info("Login throttle enabled: username {}, client IP {}, client {} (max failures / window / lock)",
+                    describe(properties.getUser()), describe(properties.getIp()), describe(properties.getClient()));
+        } else {
+            log.warn("Login throttle DISABLED (app.login-throttle.enabled=false): no brute-force protection "
+                    + "on POST /login and client authentication");
+        }
+    }
+
+    private static String describe(Limits l) {
+        return l.getMaxFailures() + "/" + l.getWindow() + "/" + l.getLockDuration();
     }
 
     public boolean isEnabled() {
@@ -160,28 +194,29 @@ public class LoginThrottle {
         long now = clock.millis();
         String user = username == null ? "" : username.trim().toLowerCase(Locale.ROOT);
         String network = network(clientIp);
-        Key knownGoodKey = network == null ? null : key("good", user + "|" + network);
-        boolean exempt = knownGoodKey != null && isKnownGood(knownGoodKey, now);
+        if (network == null) {
+            warnMissingContextOnce("no client IP");
+        }
+        Key userKey = key("user", user);
+        Key networkKey = network == null ? null : key("ip", network);
+        boolean knownNetwork = networkKey != null && isKnownGood(userKey, networkKey, now);
 
-        Reservation u = reserve(Kind.USER, key("user", user), now, true, exempt);
+        Reservation u = reserve(Kind.USER, userKey, now, knownNetwork ? Exemption.LOCK : Exemption.NONE);
         if (!u.admitted()) {
             return new Admission(false, null, u.retryAfter());
         }
         List<Slot> slots = new ArrayList<>(2);
-        if (u.slot() != null) {
-            slots.add(u.slot());
-        }
-        if (network != null) {
-            Reservation i = reserve(Kind.IP, key("ip", network), now, true, exempt && !u.lockedAtAcquire());
+        slots.add(u.slot());
+        if (networkKey != null) {
+            Exemption ipExemption = knownNetwork && !u.lockedAtAcquire() ? Exemption.LOCK : Exemption.NONE;
+            Reservation i = reserve(Kind.IP, networkKey, now, ipExemption);
             if (!i.admitted()) {
                 release(slots, now);
                 return new Admission(false, null, i.retryAfter());
             }
-            if (i.slot() != null) {
-                slots.add(i.slot());
-            }
+            slots.add(i.slot());
         }
-        return new Admission(true, new Ticket(slots, knownGoodKey, null, null), Duration.ZERO);
+        return new Admission(true, new Ticket(slots, userKey, networkKey, null, null, false), Duration.ZERO);
     }
 
     @EventListener
@@ -208,10 +243,18 @@ public class LoginThrottle {
         return counts ? Outcome.FAILURE : Outcome.NONE;
     }
 
-    private static void markOutcome(Outcome outcome) {
+    private void markOutcome(Outcome outcome) {
         RequestAttributes attributes = RequestContextHolder.getRequestAttributes();
         if (attributes != null) {
             attributes.setAttribute(OUTCOME_ATTRIBUTE, outcome, RequestAttributes.SCOPE_REQUEST);
+        } else {
+            warnMissingContextOnce("no request context for a form-login event; the attempt is not counted");
+        }
+    }
+
+    void warnMissingContextOnce(String what) {
+        if (missingContextWarned.compareAndSet(false, true)) {
+            log.warn("Login throttle: {} (logged once)", what);
         }
     }
 
@@ -223,21 +266,25 @@ public class LoginThrottle {
         }
         long now = clock.millis();
         String network = network(clientIp);
+        if (network == null) {
+            warnMissingContextOnce("no client IP");
+        }
         byte[] fingerprint = presentedSecret == null ? null : fingerprint(clientId, presentedSecret);
-        boolean exempt = fingerprint != null && isKnownFingerprint(clientId, fingerprint);
+        boolean known = fingerprint != null && isKnownFingerprint(clientId, fingerprint);
+        // A known secret is a correct secret: no guessing is possible, so no bound at all.
         Reservation r = reserve(Kind.CLIENT, key("client", (network == null ? "-" : network) + "|" + clientId),
-                now, false, exempt);
+                now, known ? Exemption.FULL : Exemption.NONE);
         if (!r.admitted()) {
             return new Admission(false, null, r.retryAfter());
         }
-        List<Slot> slots = r.slot() == null ? List.of() : List.of(r.slot());
-        return new Admission(true, new Ticket(slots, null, clientId, fingerprint), Duration.ZERO);
+        return new Admission(true, new Ticket(List.of(r.slot()), null, null, clientId, fingerprint, known),
+                Duration.ZERO);
     }
 
     // ---- shared bookkeeping -------------------------------------------------------------------------
 
     public void complete(Ticket ticket, Outcome outcome) {
-        if (ticket == null) {
+        if (ticket == null || !ticket.completed.compareAndSet(false, true)) {
             return;
         }
         long now = clock.millis();
@@ -248,16 +295,18 @@ public class LoginThrottle {
             }
         }
         if (outcome == Outcome.SUCCESS) {
-            if (ticket.knownGoodKey != null) {
-                rememberKnownGood(ticket.knownGoodKey, now);
+            if (ticket.userKey != null && ticket.networkKey != null) {
+                rememberKnownGood(ticket.userKey, ticket.networkKey, now);
             }
             if (ticket.clientId != null && ticket.fingerprint != null) {
                 rememberFingerprint(ticket.clientId, ticket.fingerprint);
             }
+        } else if (outcome == Outcome.FAILURE && ticket.fingerprintExempt) {
+            forgetFingerprint(ticket.clientId, ticket.fingerprint);   // the secret was rotated
         }
     }
 
-    /** Drops expired counters and known-good pairs. */
+    /** Drops expired entries and logs how many attempts were rejected since the last run (counts only). */
     @Scheduled(fixedDelay = 60_000)
     public void purgeExpired() {
         long now = clock.millis();
@@ -265,10 +314,40 @@ public class LoginThrottle {
             purge(kind, now);
         }
         long ttl = properties.getKnownGoodTtl().toMillis();
-        knownGood.entrySet().removeIf(e -> now - e.getValue() >= ttl);
+        for (Key user : knownGood.keySet()) {
+            knownGood.computeIfPresent(user, (k, networks) -> {
+                Map<Key, Long> kept = new LinkedHashMap<>();
+                networks.forEach((n, t) -> {
+                    if (now - t < ttl) {
+                        kept.put(n, t);
+                    }
+                });
+                return kept.isEmpty() ? null : Map.copyOf(kept);
+            });
+        }
+        reportRejections();
     }
 
-    /** Forgets every counter, known-good pair and fingerprint (tests; a pod restart does the same). */
+    private void reportRejections() {
+        StringBuilder sb = new StringBuilder();
+        long total = 0;
+        for (Kind kind : Kind.values()) {
+            long locked = rejectedLocked.get(kind).getAndSet(0);
+            long inFlight = rejectedInFlight.get(kind).getAndSet(0);
+            long over = overflowed.get(kind).getAndSet(0);
+            if (locked + inFlight + over > 0) {
+                sb.append(sb.isEmpty() ? "" : "; ").append(kind.label).append(": ").append(locked)
+                        .append(" locked, ").append(inFlight).append(" in-flight bound, ")
+                        .append(over).append(" via overflow key");
+                total += locked + inFlight;
+            }
+        }
+        if (!sb.isEmpty()) {
+            log.warn("Login throttle: rejected {} attempts since the last report ({})", total, sb);
+        }
+    }
+
+    /** Forgets every counter, known-good network and fingerprint (tests; a pod restart does the same). */
     public void clear() {
         counters.values().forEach(Map::clear);
         knownGood.clear();
@@ -281,6 +360,11 @@ public class LoginThrottle {
 
     Counter peek(String kind, String value) {
         return counters.get(Kind.valueOf(kind.toUpperCase(Locale.ROOT))).get(key(kind, value));
+    }
+
+    Counter peekOverflow(String kind) {
+        Kind k = Kind.valueOf(kind.toUpperCase(Locale.ROOT));
+        return counters.get(k).get(overflowKeys.get(k));
     }
 
     private Limits limits(Kind kind) {
@@ -309,32 +393,37 @@ public class LoginThrottle {
         return c;
     }
 
-    private Reservation reserve(Kind kind, Key key, long now, boolean hardBound, boolean exempt) {
+    private Reservation reserve(Kind kind, Key key, long now, Exemption exemption) {
         ConcurrentHashMap<Key, Counter> map = counters.get(kind);
+        Key effective = key;
         if (!map.containsKey(key) && map.size() >= capacity(kind) && !makeRoom(kind, now)) {
-            if (lastFullWarning.get() + FULL_WARNING_INTERVAL_MILLIS <= now) {
-                lastFullWarning.set(now);
-                log.warn("Login throttle: {} table full of active entries; new keys are not tracked", kind.label);
-            }
-            return Reservation.untracked();
+            // Full of active entries: new keys share one overflow key, which is throttled like any key.
+            effective = overflowKeys.get(kind);
+            overflowed.get(kind).incrementAndGet();
         }
         Limits limits = limits(kind);
+        Key slotKey = effective;
         Reservation[] out = new Reservation[1];
-        map.compute(key, (k, old) -> {
+        map.compute(slotKey, (k, old) -> {
             Counter c = normalize(old, limits, now);
             if (c == null) {
                 c = new Counter(0, 0, now, 0);
             }
+            int max = limits.getMaxFailures();
             boolean locked = c.lockedAt(now);
-            int pending = c.failures() + c.inFlight();
-            boolean full = hardBound ? pending >= limits.getMaxFailures()
-                    : c.failures() > 0 && pending >= limits.getMaxFailures();
-            if (!exempt && (locked || full)) {
+            boolean full = c.failures() + c.inFlight() >= max;
+            boolean reject = switch (exemption) {
+                case NONE -> locked || full;
+                case LOCK -> c.inFlight() >= max;
+                case FULL -> false;
+            };
+            if (reject) {
+                (locked && exemption == Exemption.NONE ? rejectedLocked : rejectedInFlight).get(kind).incrementAndGet();
                 Duration retry = locked ? Duration.ofMillis(c.lockedUntil() - now) : Duration.ofSeconds(1);
-                out[0] = new Reservation(false, null, true, retry);
+                out[0] = new Reservation(false, null, locked, retry);
                 return c.idleAt(now) ? null : c;
             }
-            out[0] = new Reservation(true, new Slot(kind, key), locked, Duration.ZERO);
+            out[0] = new Reservation(true, new Slot(kind, slotKey), locked, Duration.ZERO);
             return new Counter(c.failures(), c.inFlight() + 1, c.windowStart(), c.lockedUntil());
         });
         return out[0];
@@ -361,10 +450,10 @@ public class LoginThrottle {
                     lockedAfter[0] = failures;
                 }
             } else if (outcome == Outcome.SUCCESS && slot.kind() != Kind.IP) {
-                // A success proves the credential: reset the username/client key, keep in-flight bookkeeping.
+                // A success proves the credential: reset the count, but an active lock stays, so a
+                // legitimate login never hands an attacker a fresh budget.
                 failures = 0;
                 windowStart = now;
-                lockedUntil = 0;
             }
             Counter next = new Counter(failures, inFlight, windowStart, lockedUntil);
             return next.idleAt(now) ? null : next;
@@ -399,50 +488,86 @@ public class LoginThrottle {
         }
     }
 
-    /** Bounded work: an occasional purge, then evict one unlocked, idle entry out of a small sample. */
+    private static boolean evictable(Counter c, long now) {
+        return !c.lockedAt(now) && c.inFlight() == 0;
+    }
+
+    /**
+     * Bounded work: evict the entry with the fewest failures out of a small sample; if the sample holds no
+     * evictable entry, at most every 10 s per table, purge and scan the whole table. Locked or in-flight
+     * entries are never evicted.
+     */
     private boolean makeRoom(Kind kind, long now) {
         ConcurrentHashMap<Key, Counter> map = counters.get(kind);
-        long last = lastFullPurge.get();
-        if (now - last >= FULL_PURGE_INTERVAL_MILLIS && lastFullPurge.compareAndSet(last, now)) {
-            purge(kind, now);
+        Key overflow = overflowKeys.get(kind);
+        Key victim = pickVictim(map, overflow, now, EVICTION_SAMPLE);
+        if (victim == null) {
+            AtomicLong last = lastFullScan.get(kind);
+            long previous = last.get();
+            if (now - previous >= FULL_SCAN_INTERVAL_MILLIS && last.compareAndSet(previous, now)) {
+                purge(kind, now);
+                if (map.size() < capacity(kind)) {
+                    return true;
+                }
+                victim = pickVictim(map, overflow, now, Integer.MAX_VALUE);
+            }
         }
-        if (map.size() < capacity(kind)) {
-            return true;
+        if (victim != null) {
+            map.computeIfPresent(victim, (k, c) -> evictable(c, now) ? null : c);
         }
+        return map.size() < capacity(kind);
+    }
+
+    private static Key pickVictim(Map<Key, Counter> map, Key overflow, long now, int sample) {
         Key victim = null;
         int fewest = Integer.MAX_VALUE;
         int seen = 0;
         for (Map.Entry<Key, Counter> e : map.entrySet()) {
             Counter c = e.getValue();
-            if (!c.lockedAt(now) && c.inFlight() == 0 && c.failures() < fewest) {
+            if (!e.getKey().equals(overflow) && evictable(c, now) && c.failures() < fewest) {
                 victim = e.getKey();
                 fewest = c.failures();
             }
-            if (++seen >= EVICTION_SAMPLE) {
+            if (++seen >= sample) {
                 break;
             }
         }
-        if (victim != null) {
-            map.computeIfPresent(victim, (k, c) -> !c.lockedAt(now) && c.inFlight() == 0 ? null : c);
-        }
-        return map.size() < capacity(kind);
+        return victim;
     }
 
-    private boolean isKnownGood(Key key, long now) {
-        Long since = knownGood.get(key);
+    private boolean isKnownGood(Key user, Key network, long now) {
+        Map<Key, Long> networks = knownGood.get(user);
+        Long since = networks == null ? null : networks.get(network);
         return since != null && now - since < properties.getKnownGoodTtl().toMillis();
     }
 
-    private void rememberKnownGood(Key key, long now) {
-        if (!knownGood.containsKey(key) && knownGood.size() >= MAX_KNOWN_GOOD_ENTRIES) {
-            long ttl = properties.getKnownGoodTtl().toMillis();
-            knownGood.entrySet().removeIf(e -> now - e.getValue() >= ttl);
-            if (knownGood.size() >= MAX_KNOWN_GOOD_ENTRIES) {
-                knownGood.entrySet().stream().min(Map.Entry.comparingByValue())
-                        .ifPresent(oldest -> knownGood.remove(oldest.getKey(), oldest.getValue()));
-            }
+    /**
+     * Per username, the {@value #KNOWN_GOOD_NETWORKS_PER_USER} most recent networks; one account's logins
+     * can therefore never push another username's networks out. Only a new username can evict another
+     * username's list, and only when {@value #MAX_KNOWN_GOOD_USERS} usernames have successful logins.
+     */
+    private void rememberKnownGood(Key user, Key network, long now) {
+        if (!knownGood.containsKey(user) && knownGood.size() >= MAX_KNOWN_GOOD_USERS) {
+            knownGood.entrySet().stream()
+                    .min((a, b) -> Long.compare(newest(a.getValue()), newest(b.getValue())))
+                    .ifPresent(oldest -> knownGood.remove(oldest.getKey(), oldest.getValue()));
         }
-        knownGood.put(key, now);
+        knownGood.compute(user, (k, networks) -> {
+            LinkedHashMap<Key, Long> next = new LinkedHashMap<>();
+            next.put(network, now);
+            if (networks != null) {
+                networks.entrySet().stream()
+                        .filter(e -> !e.getKey().equals(network))
+                        .sorted((a, b) -> Long.compare(b.getValue(), a.getValue()))
+                        .limit(KNOWN_GOOD_NETWORKS_PER_USER - 1L)
+                        .forEach(e -> next.put(e.getKey(), e.getValue()));
+            }
+            return Map.copyOf(next);
+        });
+    }
+
+    private static long newest(Map<Key, Long> networks) {
+        return networks.values().stream().mapToLong(Long::longValue).max().orElse(Long.MIN_VALUE);
     }
 
     private byte[] fingerprint(String clientId, String secret) {
@@ -472,10 +597,18 @@ public class LoginThrottle {
         });
     }
 
-    static Key key(String kind, String value) {
+    private void forgetFingerprint(String clientId, byte[] fingerprint) {
+        clientFingerprints.computeIfPresent(clientId, (id, known) -> {
+            List<byte[]> next = known.stream().filter(f -> !MessageDigest.isEqual(f, fingerprint)).toList();
+            return next.isEmpty() ? null : next;
+        });
+    }
+
+    Key key(String kind, String value) {
         try {
-            byte[] d = MessageDigest.getInstance("SHA-256")
-                    .digest((kind + ":" + value).getBytes(StandardCharsets.UTF_8));
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            digest.update(keySalt);
+            byte[] d = digest.digest((kind + ":" + value).getBytes(StandardCharsets.UTF_8));
             ByteBuffer b = ByteBuffer.wrap(d);
             return new Key(b.getLong(), b.getLong(), b.getLong(), b.getLong());
         } catch (GeneralSecurityException e) {

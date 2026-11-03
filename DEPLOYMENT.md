@@ -450,13 +450,18 @@ kubectl -n apps logs -l app=auth-service --tail=-1 --request-timeout=10s | grep 
 # Login throttle: client 'device-service' locked for 300 s after 10 failed attempts
 ```
 
+- Every minute with rejections: `Login throttle: rejected <n> attempts since the last report (username: <a> locked, <b> in-flight bound, <c> via overflow key; ...)` (counts only).
 - **Unlock early:** restart the pod (see "Restart service"). That clears every counter, the known-good list and the
   client fingerprints.
 - **Client locked after a secret rotation:** a client that kept retrying with its old secret may get `429` for up to
   5 minutes; it recovers by itself once it uses the new secret after the lock.
 - **Kill switch:** add `APP_LOGIN_THROTTLE_ENABLED` with value `"false"` to the container `env` in
   `k8s/deployment.yaml` (pull request, merge, Flux applies it). Thresholds can be changed the same way, for example
-  `APP_LOGIN_THROTTLE_USER_MAX_FAILURES`.
+  `APP_LOGIN_THROTTLE_USER_MAX_FAILURES`; durations need a unit (`15m`), and values under 1 s fail start-up.
+- **Owner kept out right after a restart:** a restart (every merge) empties the known-network list, so a targeted
+  attack on the owner's username can block new logins until he logs in from a known network again. Recovery: set
+  the kill switch by pull request (the GitHub web UI needs no auth-service login), or raise
+  `APP_LOGIN_THROTTLE_USER_MAX_FAILURES` the same way.
 - **Rollback:** `git revert` the merge commit on `main`; CI builds the image and Flux rolls it out.
 - **Live check:** the login form needs a session cookie and its CSRF token, and the Cloudflare edge rule allows 5
   requests per 10 s per IP, so space attempts at least 3 s apart. From the home network every failure also counts

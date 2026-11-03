@@ -264,9 +264,9 @@ class LoginThrottleTest {
         Admission second = throttle.acquireLogin("owner", "203.0.113.2");
         throttle.complete(first.ticket(), Outcome.SUCCESS);
         throttle.complete(second.ticket(), Outcome.FAILURE);
-        throttle.complete(second.ticket(), Outcome.FAILURE);   // a double completion must not go negative
+        throttle.complete(second.ticket(), Outcome.FAILURE);   // a second completion of a ticket is ignored
         assertThat(throttle.peek("user", "owner").inFlight()).isZero();
-        assertThat(throttle.peek("user", "owner").failures()).isEqualTo(2);
+        assertThat(throttle.peek("user", "owner").failures()).isEqualTo(1);
     }
 
     @Test
@@ -298,20 +298,24 @@ class LoginThrottleTest {
     @Test
     void hugeUsernamesAreStoredAsFixedSizeKeys() {
         String huge = "x".repeat(1_000_000);
-        assertThat(LoginThrottle.key("user", huge)).isEqualTo(LoginThrottle.key("user", huge));
-        assertThat(LoginThrottle.key("user", huge)).isNotEqualTo(LoginThrottle.key("user", huge + "y"));
+        assertThat(throttle.key("user", huge)).isEqualTo(throttle.key("user", huge));
+        assertThat(throttle.key("user", huge)).isNotEqualTo(throttle.key("user", huge + "y"));
+        // Salted per process: another instance places the same input elsewhere.
+        assertThat(new LoginThrottle(props, clock).key("user", "owner")).isNotEqualTo(throttle.key("user", "owner"));
         assertThat(LoginThrottle.Key.class.getRecordComponents()).hasSize(4);   // four longs, whatever the input
     }
 
     @Test
-    void fullMapOfLockedEntriesAdmitsNewKeysUntrackedAndKeepsTheLocks() {
+    void fullMapOfLockedEntriesSendsNewKeysToTheThrottledOverflowKey() {
         props.setMaxEntries(4);
         props.setUser(new LoginThrottleProperties.Limits(1, Duration.ofMinutes(15), Duration.ofMinutes(5)));
         props.setIp(new LoginThrottleProperties.Limits(1000, Duration.ofMinutes(15), Duration.ofMinutes(15)));
         for (int i = 0; i < 4; i++) {
             login("locked" + i, null, Outcome.FAILURE);
         }
-        assertThat(throttle.acquireLogin("new-user", null).admitted()).isTrue();
+        assertThat(login("new-user", null, Outcome.FAILURE)).isTrue();          // shares the overflow key
+        assertThat(throttle.peekOverflow("user")).isNotNull();
+        assertThat(throttle.acquireLogin("another-new-user", null).admitted()).isFalse();   // overflow locked
         for (int i = 0; i < 4; i++) {
             assertThat(throttle.acquireLogin("locked" + i, null).admitted()).isFalse();
         }
@@ -359,10 +363,97 @@ class LoginThrottleTest {
     }
 
     @Test
-    void cleanClientsHaveNoConcurrencyBound() {
-        for (int i = 0; i < 20; i++) {
+    void clientConcurrencyIsBoundedUntilTheSecretIsKnown() throws Exception {
+        ExecutorService pool = Executors.newFixedThreadPool(16);
+        CountDownLatch start = new CountDownLatch(1);
+        List<Future<Boolean>> results = new ArrayList<>();
+        for (int i = 0; i < 40; i++) {
+            results.add(pool.submit(() -> {
+                start.await();
+                return throttle.acquireClient("furchert-ch", "10.42.0.5", "guess").admitted();
+            }));
+        }
+        start.countDown();
+        int admitted = 0;
+        for (Future<Boolean> f : results) {
+            admitted += f.get() ? 1 : 0;
+        }
+        pool.shutdown();
+        assertThat(admitted).isEqualTo(3);
+        throttle.clear();
+        assertThat(client("furchert-ch", "10.42.0.5", "right", Outcome.SUCCESS)).isTrue();
+        for (int i = 0; i < 20; i++) {   // a known secret is never bounded
             assertThat(throttle.acquireClient("furchert-ch", "10.42.0.5", "right").admitted()).isTrue();
         }
+    }
+
+    @Test
+    void aRotatedSecretLosesItsExemption() {
+        assertThat(client("device-service", "10.42.0.7", "old", Outcome.SUCCESS)).isTrue();
+        // The client's secret was rotated: the old secret now fails, and stops being exempt.
+        assertThat(client("device-service", "10.42.0.7", "old", Outcome.FAILURE)).isTrue();
+        for (int i = 0; i < 2; i++) {
+            client("device-service", "10.42.0.7", "old", Outcome.FAILURE);
+        }
+        assertThat(throttle.acquireClient("device-service", "10.42.0.7", "old").admitted()).isFalse();
+    }
+
+    @Test
+    void aKnownNetworkIsStillBoundedByAttemptsInFlight() {
+        login("owner", "192.0.2.10", Outcome.SUCCESS);
+        int admitted = 0;
+        for (int i = 0; i < 20; i++) {   // never completed: all stay in flight
+            admitted += throttle.acquireLogin("owner", "192.0.2.10").admitted() ? 1 : 0;
+        }
+        assertThat(admitted).isEqualTo(3);
+    }
+
+    @Test
+    void aSuccessNeverLiftsAnActiveLock() {
+        login("owner", "192.0.2.10", Outcome.SUCCESS);
+        for (int i = 0; i < 3; i++) {
+            login("owner", "203.0.113." + i, Outcome.FAILURE);
+        }
+        assertThat(login("owner", "192.0.2.10", Outcome.SUCCESS)).isTrue();   // known network
+        assertThat(throttle.acquireLogin("owner", "198.51.100.1").admitted()).isFalse();   // still locked
+    }
+
+    @Test
+    void anotherAccountCannotPushTheOwnersNetworksOut() {
+        login("owner", "192.0.2.10", Outcome.SUCCESS);
+        for (int i = 0; i < 200; i++) {
+            login("attacker", "198.51.100." + i, Outcome.SUCCESS);   // one account, many networks
+        }
+        for (int i = 0; i < 3; i++) {
+            login("owner", "203.0.113." + i, Outcome.FAILURE);
+        }
+        assertThat(login("owner", "192.0.2.10", Outcome.NONE)).isTrue();
+    }
+
+    @Test
+    void eachUsernameKeepsItsMostRecentNetworks() {
+        for (int i = 1; i <= LoginThrottle.KNOWN_GOOD_NETWORKS_PER_USER + 1; i++) {
+            login("owner", "192.0.2." + i, Outcome.SUCCESS);
+            clock.advance(Duration.ofSeconds(1));
+        }
+        for (int i = 0; i < 3; i++) {
+            login("owner", "203.0.113." + i, Outcome.FAILURE);
+        }
+        assertThat(throttle.acquireLogin("owner", "192.0.2.1").admitted()).isFalse();   // oldest dropped
+        assertThat(throttle.acquireLogin("owner", "192.0.2.9").admitted()).isTrue();
+    }
+
+    @Test
+    void rejectionsAreReportedAsCountsOnly(CapturedOutput out) {
+        for (int i = 0; i < 3; i++) {
+            login("secret-looking-name", "203.0.113.77", Outcome.FAILURE);
+        }
+        for (int i = 0; i < 4; i++) {
+            throttle.acquireLogin("secret-looking-name", "203.0.113.78");
+        }
+        throttle.purgeExpired();
+        assertThat(out.getAll()).contains("Login throttle: rejected 4 attempts since the last report")
+                .contains("username: 4 locked").doesNotContain("secret-looking-name").doesNotContain("203.0.113.7");
     }
 
     @Test

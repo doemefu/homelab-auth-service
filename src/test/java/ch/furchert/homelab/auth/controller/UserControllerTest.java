@@ -1,5 +1,6 @@
 package ch.furchert.homelab.auth.controller;
 
+import ch.furchert.homelab.auth.security.LoginThrottle;
 import ch.furchert.homelab.auth.config.SecurityConfig;
 import ch.furchert.homelab.auth.dto.CreateUserRequest;
 import ch.furchert.homelab.auth.dto.UpdateUserRequest;
@@ -43,7 +44,7 @@ class UserControllerTest {
 
     // SecurityConfig's login chain needs the #104 throttle; a mock reports "disabled" (filter passes through).
     @MockitoBean
-    ch.furchert.homelab.auth.security.LoginThrottle loginThrottle;
+    LoginThrottle loginThrottle;
 
     @MockitoBean
     JwtDecoder jwtDecoder;

@@ -1,5 +1,6 @@
 package ch.furchert.homelab.auth.controller;
 
+import ch.furchert.homelab.auth.security.LoginThrottle;
 import ch.furchert.homelab.auth.config.SecurityConfig;
 import ch.furchert.homelab.auth.dto.CreateDeviceClientRequest;
 import ch.furchert.homelab.auth.dto.DeviceClientCreatedResponse;
@@ -37,7 +38,7 @@ class DeviceClientControllerTest {
     ObjectMapper objectMapper;
     // SecurityConfig's login chain needs the #104 throttle; a mock reports "disabled" (filter passes through).
     @MockitoBean
-    ch.furchert.homelab.auth.security.LoginThrottle loginThrottle;
+    LoginThrottle loginThrottle;
 
     @MockitoBean
     JwtDecoder jwtDecoder;

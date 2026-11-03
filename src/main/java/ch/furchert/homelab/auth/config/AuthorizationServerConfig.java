@@ -64,6 +64,7 @@ import org.springframework.security.web.authentication.AuthenticationFailureHand
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
 import org.springframework.security.web.authentication.logout.SecurityContextLogoutHandler;
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
+import org.springframework.util.Assert;
 
 import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
@@ -101,11 +102,17 @@ public class AuthorizationServerConfig {
                         // Failed-attempt throttle (#104) around the bcrypt client-secret check, for every
                         // endpoint that authenticates clients; 429 for throttled attempts, SAS default otherwise.
                         .clientAuthentication(client -> client
-                                .authenticationProviders(providers -> providers.replaceAll(provider ->
-                                        provider instanceof ClientSecretAuthenticationProvider secret
-                                                ? new ThrottlingClientSecretAuthenticationProvider(
-                                                        secret, loginThrottle, registeredClientRepository)
-                                                : provider))
+                                .authenticationProviders(providers -> {
+                                    providers.replaceAll(provider ->
+                                            provider instanceof ClientSecretAuthenticationProvider secret
+                                                    ? new ThrottlingClientSecretAuthenticationProvider(
+                                                            secret, loginThrottle, registeredClientRepository)
+                                                    : provider);
+                                    // Fail start-up rather than run without the client throttle.
+                                    Assert.state(providers.stream().anyMatch(
+                                                    ThrottlingClientSecretAuthenticationProvider.class::isInstance),
+                                            "ClientSecretAuthenticationProvider not found: client throttle not installed");
+                                })
                                 .errorResponseHandler(new ClientAuthenticationErrorHandler()))
                         .authorizationEndpoint(authorization -> authorization.authenticationProviders(providers ->
                                 providers.forEach(provider -> {

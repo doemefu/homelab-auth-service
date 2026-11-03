@@ -29,11 +29,25 @@ class ProductionYamlLoginThrottleTest {
         assertThat(p.getUser().getWindow()).isEqualTo(Duration.ofMinutes(15));
         assertThat(p.getUser().getLockDuration()).isEqualTo(Duration.ofMinutes(5));
         assertThat(p.getIp().getMaxFailures()).isEqualTo(20);
+        assertThat(p.getIp().getWindow()).isEqualTo(Duration.ofMinutes(15));
         assertThat(p.getIp().getLockDuration()).isEqualTo(Duration.ofMinutes(15));
         assertThat(p.getClient().getMaxFailures()).isEqualTo(10);
         assertThat(p.getClient().getWindow()).isEqualTo(Duration.ofMinutes(5));
         assertThat(p.getClient().getLockDuration()).isEqualTo(Duration.ofMinutes(5));
         assertThat(p.getKnownGoodTtl()).isEqualTo(Duration.ofDays(30));
         assertThat(p.getMaxEntries()).isEqualTo(30_000);
+    }
+
+    @Test
+    void durationsShorterThanOneSecondAreRejected() {
+        // Boot binds a unit-less Duration as milliseconds: "900" would silently disable a lock.
+        LoginThrottleProperties p = new LoginThrottleProperties();
+        p.getUser().setWindow(Duration.ofMillis(900));
+        p.getIp().setLockDuration(Duration.ZERO);
+        p.setKnownGoodTtl(Duration.ofMillis(-1));
+        try (var factory = jakarta.validation.Validation.buildDefaultValidatorFactory()) {
+            assertThat(factory.getValidator().validate(p)).extracting(v -> v.getPropertyPath().toString())
+                    .containsExactlyInAnyOrder("user.window", "ip.lockDuration", "knownGoodTtl");
+        }
     }
 }

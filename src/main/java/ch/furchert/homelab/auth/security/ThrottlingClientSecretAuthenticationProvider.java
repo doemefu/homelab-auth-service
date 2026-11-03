@@ -1,6 +1,8 @@
 package ch.furchert.homelab.auth.security;
 
 import jakarta.servlet.http.HttpServletRequest;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataAccessException;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
@@ -26,6 +28,7 @@ import java.time.Duration;
  * <p>
  * Never a Spring bean: an AuthenticationProvider bean would join the global authentication manager.
  */
+@Slf4j
 public class ThrottlingClientSecretAuthenticationProvider implements AuthenticationProvider {
 
     /** Raised for a throttled client authentication; carries the Retry-After value. */
@@ -96,8 +99,10 @@ public class ThrottlingClientSecretAuthenticationProvider implements Authenticat
     private boolean isRegistered(String clientId) {
         try {
             return registeredClients.findByClientId(clientId) != null;
-        } catch (RuntimeException e) {
-            return false;   // never let bookkeeping replace the authentication error
+        } catch (DataAccessException e) {
+            // Never let bookkeeping replace the authentication error; this failure is not counted.
+            log.warn("Login throttle: client lookup failed ({}); failure not counted", e.getClass().getSimpleName());
+            return false;
         }
     }
 
