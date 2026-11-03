@@ -70,6 +70,7 @@
 <div class="card">
     <h1>furchert.ch</h1>
     <p th:if="${param.error}" class="error">Invalid username or password.</p>
+    <p th:if="${param.throttled}" class="error">Too many failed sign-in attempts. Wait a few minutes, then try again.</p>
     <p th:if="${param.logout}" class="info">You have been signed out.</p>
     <form method="post" action="/login">
         <label for="username">Username</label>
