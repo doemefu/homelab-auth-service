@@ -21,7 +21,6 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.util.List;
@@ -32,6 +31,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -149,11 +149,23 @@ class UserServiceTest {
     }
 
     @Test
-    void getUser_asOtherUser_throwsAccessDenied() {
+    void getUser_asOtherUser_answersLikeAnAbsentId() {
+        // #106: another user's id must be indistinguishable from an absent one.
         when(userRepository.findById(1L)).thenReturn(Optional.of(existingUser));
 
         assertThatThrownBy(() -> userService.getUser(1L, "otheruser", false))
-                .isInstanceOf(AccessDeniedException.class);
+                .isInstanceOf(ResourceNotFoundException.class).hasMessage("User not found: 1");
+    }
+
+    @Test
+    void resetPassword_asOtherUser_answersLikeAnAbsentIdAndChangesNothing() {
+        when(userRepository.findById(1L)).thenReturn(Optional.of(existingUser));
+
+        assertThatThrownBy(() -> userService.resetPassword(1L,
+                new ResetPasswordRequest("whatever", "new-password-123"), "otheruser", false))
+                .isInstanceOf(ResourceNotFoundException.class).hasMessage("User not found: 1");
+        verify(userRepository, never()).save(any());
+        verifyNoInteractions(jdbcTemplate);
     }
 
     @Test
