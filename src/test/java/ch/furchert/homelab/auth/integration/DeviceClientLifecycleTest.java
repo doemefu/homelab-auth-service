@@ -36,7 +36,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * any resource server that only checks signature + exp until they expire. The
  * delete only revokes the AS authorization rows and refuses new token requests.
  */
-class DeviceClientLifecycleIT extends AbstractIntegrationTest {
+class DeviceClientLifecycleTest extends AbstractIntegrationTest {
 
     @Autowired
     MockMvc mockMvc;
