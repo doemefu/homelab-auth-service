@@ -53,18 +53,19 @@ import java.util.concurrent.atomic.AtomicLong;
  *   (client IP, client_id). A secret that already authenticated this client since the last restart
  *   passes the lock, so once a client has authenticated, nobody else can lock it out. The client IP comes
  *   from a header that callers inside the cluster can forge, so a second, IP-independent key per client_id
- *   counts failures from all sources: past its threshold the client is in strict mode, where every source
- *   gets a single failed attempt. Strict mode never rejects a source without failures, so it cannot lock a
- *   working client out.</li>
+ *   counts failures from all sources: past its threshold the client is in strict mode, where a source that
+ *   already has a failure is rejected until its window ends (no lock, never on overflow keys). Strict mode
+ *   never rejects a source without failures; it does not stop a caller who forges the header (#133).</li>
  * </ul>
  * Only failures count. {@code max-failures} failures inside {@code window} lock the key for
  * {@code lock-duration}; attempts during a lock are rejected before any credential check and are not
  * counted, so a lock always ends. A success resets the count but never lifts an active lock. For
  * attempts without an exemption, failures plus attempts in flight never exceed {@code max-failures}.
  * Keys are salted SHA-256 digests, so neither huge inputs nor plaintext usernames are kept and table
- * positions cannot be predicted. When a table is full of active entries, a new key is throttled on one of
- * {@value #OVERFLOW_SHARDS} overflow keys chosen by its salted hash; a success never resets an overflow
- * key. Log lines never contain
+ * positions cannot be predicted. When a table is full of active entries, a new key is counted on one of
+ * {@value #OVERFLOW_SHARDS} overflow keys chosen by its salted hash. Overflow keys are shared by unrelated
+ * keys, so they never lock or reject: they only delay attempts (at most {@code 1 s}) as their failures grow,
+ * and a success never resets them. Log lines never contain
  * a username, an IP or a secret; client locks name the (registered) client id.
  * {@code users.status} is never touched and no authorization is revoked.
  */
@@ -82,6 +83,8 @@ public class LoginThrottle {
     static final int KNOWN_GOOD_NETWORKS_PER_USER = 8;
     static final int FINGERPRINTS_PER_CLIENT = 4;
     static final int OVERFLOW_SHARDS = 256;
+    static final Duration OVERFLOW_DELAY_STEP = Duration.ofMillis(100);
+    static final Duration OVERFLOW_DELAY_CAP = Duration.ofSeconds(1);
     private static final int EVICTION_SAMPLE = 16;
     private static final long FULL_SCAN_INTERVAL_MILLIS = 10_000;
     private static final long WARNING_INTERVAL_MILLIS = 60_000;
@@ -113,14 +116,18 @@ public class LoginThrottle {
         }
     }
 
-    public record Admission(boolean admitted, Ticket ticket, Duration retryAfter) {
+    /** {@code delay}: wait this long before the credential check (overflow keys only). */
+    public record Admission(boolean admitted, Ticket ticket, Duration retryAfter, Duration delay) {
+        Admission(boolean admitted, Ticket ticket, Duration retryAfter) {
+            this(admitted, ticket, retryAfter, Duration.ZERO);
+        }
     }
 
-    /** {@code maxFailures} 0 = the kind's configured threshold. */
-    private record Slot(Kind kind, Key key, boolean overflow, int maxFailures) {
+    private record Slot(Kind kind, Key key, boolean overflow) {
     }
 
-    private record Reservation(boolean admitted, Slot slot, boolean lockedAtAcquire, Duration retryAfter) {
+    private record Reservation(boolean admitted, Slot slot, boolean lockedAtAcquire, Duration retryAfter,
+                               Duration delay) {
     }
 
     /** Handle of one admitted attempt; only its first {@link #complete} counts. */
@@ -157,11 +164,13 @@ public class LoginThrottle {
     private final Map<Kind, AtomicLong> lastFullScan = new EnumMap<>(Kind.class);
     private final Map<Kind, AtomicLong> rejectedLocked = new EnumMap<>(Kind.class);
     private final Map<Kind, AtomicLong> rejectedInFlight = new EnumMap<>(Kind.class);
+    private final Map<Kind, AtomicLong> rejectedStrict = new EnumMap<>(Kind.class);
     private final Map<Kind, AtomicLong> overflowed = new EnumMap<>(Kind.class);
     private final AtomicBoolean missingContextWarned = new AtomicBoolean();
     private final AtomicBoolean missingIpWarned = new AtomicBoolean();
     private final AtomicLong fullScans = new AtomicLong();
     private volatile int evictionSample = EVICTION_SAMPLE;
+    private volatile int clientCapacity = MAX_CLIENT_ENTRIES;
 
     @Autowired
     public LoginThrottle(LoginThrottleProperties properties) {
@@ -185,11 +194,13 @@ public class LoginThrottle {
             lastFullScan.put(kind, new AtomicLong(Long.MIN_VALUE / 2));
             rejectedLocked.put(kind, new AtomicLong());
             rejectedInFlight.put(kind, new AtomicLong());
+            rejectedStrict.put(kind, new AtomicLong());
             overflowed.put(kind, new AtomicLong());
         }
         if (properties.isEnabled()) {
-            log.info("Login throttle enabled: username {}, client IP {}, client {} (max failures / window / lock)",
-                    describe(properties.getUser()), describe(properties.getIp()), describe(properties.getClient()));
+            log.info("Login throttle enabled: username {}, client IP {}, client {}, client id strict mode {} "
+                            + "(max failures / window / lock)", describe(properties.getUser()),
+                    describe(properties.getIp()), describe(properties.getClient()), describe(properties.getClientId()));
         } else {
             log.warn("Login throttle DISABLED (app.login-throttle.enabled=false): no brute-force protection "
                     + "on POST /login and client authentication");
@@ -226,6 +237,7 @@ public class LoginThrottle {
         }
         List<Slot> slots = new ArrayList<>(2);
         slots.add(u.slot());
+        Duration delay = u.delay();
         if (networkKey != null) {
             Exemption ipExemption = knownNetwork && !u.lockedAtAcquire() ? Exemption.LOCK : Exemption.NONE;
             Reservation i = reserve(Kind.IP, networkKey, now, ipExemption);
@@ -234,8 +246,9 @@ public class LoginThrottle {
                 return new Admission(false, null, i.retryAfter());
             }
             slots.add(i.slot());
+            delay = delay.compareTo(i.delay()) >= 0 ? delay : i.delay();
         }
-        return new Admission(true, new Ticket(slots, userKey, networkKey, null, null, false), Duration.ZERO);
+        return new Admission(true, new Ticket(slots, userKey, networkKey, null, null, false), Duration.ZERO, delay);
     }
 
     @EventListener
@@ -292,20 +305,20 @@ public class LoginThrottle {
         boolean known = fingerprint != null && isKnownFingerprint(clientId, fingerprint);
         if (known) {
             // A known secret is a correct secret: no guessing is possible, so no bound and nothing to count.
-            Reservation r = reserve(Kind.CLIENT, clientKey(network, clientId), now, Exemption.FULL, 0);
+            Reservation r = reserve(Kind.CLIENT, clientKey(network, clientId), now, Exemption.FULL, false);
             return new Admission(true, new Ticket(List.of(r.slot()), null, null, clientId, fingerprint, true),
                     Duration.ZERO);
         }
         Key clientIdKey = key("client-id", clientId);
         boolean strict = isLocked(Kind.CLIENT_ID, clientIdKey, now);
-        Reservation r = reserve(Kind.CLIENT, clientKey(network, clientId), now, Exemption.NONE, strict ? 1 : 0);
+        Reservation r = reserve(Kind.CLIENT, clientKey(network, clientId), now, Exemption.NONE, strict);
         if (!r.admitted()) {
             return new Admission(false, null, r.retryAfter());
         }
         // Counts failures from every source; never rejects (strict mode only tightens the per-source key).
-        Reservation all = reserve(Kind.CLIENT_ID, clientIdKey, now, Exemption.FULL, 0);
+        Reservation all = reserve(Kind.CLIENT_ID, clientIdKey, now, Exemption.FULL, false);
         return new Admission(true, new Ticket(List.of(r.slot(), all.slot()), null, null, clientId, fingerprint,
-                false), Duration.ZERO);
+                false), Duration.ZERO, r.delay());
     }
 
     private Key clientKey(String network, String clientId) {
@@ -370,12 +383,13 @@ public class LoginThrottle {
         for (Kind kind : Kind.values()) {
             long locked = rejectedLocked.get(kind).getAndSet(0);
             long inFlight = rejectedInFlight.get(kind).getAndSet(0);
+            long strict = rejectedStrict.get(kind).getAndSet(0);
             long over = overflowed.get(kind).getAndSet(0);
-            if (locked + inFlight + over > 0) {
+            if (locked + inFlight + strict + over > 0) {
                 sb.append(sb.isEmpty() ? "" : "; ").append(kind.label).append(": ").append(locked)
-                        .append(" locked, ").append(inFlight).append(" in-flight bound, ")
-                        .append(over).append(" via overflow key");
-                total += locked + inFlight;
+                        .append(" locked, ").append(inFlight).append(" in-flight bound, ").append(strict)
+                        .append(" strict mode, ").append(over).append(" counted on overflow keys");
+                total += locked + inFlight + strict;
             }
         }
         if (!sb.isEmpty()) {
@@ -407,6 +421,11 @@ public class LoginThrottle {
         return fullScans.get();
     }
 
+    /** Tests: shrink the client tables. */
+    void setClientCapacity(int capacity) {
+        this.clientCapacity = capacity;
+    }
+
     /** Overflow shard of a value, as {@link #reserve} picks it. */
     int overflowShard(String kind, String value) {
         return shard(key(kind, value));
@@ -431,7 +450,7 @@ public class LoginThrottle {
     }
 
     private int capacity(Kind kind) {
-        return kind == Kind.CLIENT || kind == Kind.CLIENT_ID ? MAX_CLIENT_ENTRIES : properties.getMaxEntries();
+        return kind == Kind.CLIENT || kind == Kind.CLIENT_ID ? clientCapacity : properties.getMaxEntries();
     }
 
     /** Lock expired → fresh window; window expired without a lock → count restarts. In-flight is kept. */
@@ -449,17 +468,16 @@ public class LoginThrottle {
     }
 
     private Reservation reserve(Kind kind, Key key, long now, Exemption exemption) {
-        return reserve(kind, key, now, exemption, 0);
+        return reserve(kind, key, now, exemption, false);
     }
 
-    /** @param maxOverride a stricter threshold for this attempt (strict mode), 0 = the kind's own */
-    private Reservation reserve(Kind kind, Key key, long now, Exemption exemption, int maxOverride) {
+    /** @param strict client strict mode: a key that already has a failure is rejected until its window ends */
+    private Reservation reserve(Kind kind, Key key, long now, Exemption exemption, boolean strict) {
         ConcurrentHashMap<Key, Counter> map = counters.get(kind);
         Key effective = key;
         boolean overflow = false;
         if (!map.containsKey(key) && map.size() >= capacity(kind) && !makeRoom(kind, now)) {
-            // Full of active entries: the new key is throttled on its overflow shard (salted hash), so
-            // locking one shard never blocks the other new keys.
+            // Full of active entries: the new key is counted on its overflow shard (salted hash).
             effective = overflowKeys.get(kind)[shard(key)];
             overflow = true;
             overflowed.get(kind).incrementAndGet();
@@ -473,24 +491,54 @@ public class LoginThrottle {
             if (c == null) {
                 c = new Counter(0, 0, now, 0);
             }
-            int max = maxOverride > 0 ? Math.min(maxOverride, limits.getMaxFailures()) : limits.getMaxFailures();
+            if (overflowSlot) {
+                // Shared by unrelated keys: never rejects and never locks (see completeSlot); a small,
+                // capped delay grows with its failures, so a full table means slower attempts, not lockouts.
+                out[0] = new Reservation(true, new Slot(kind, slotKey, true), false, Duration.ZERO,
+                        overflowDelay(c.failures()));
+                return new Counter(c.failures(), c.inFlight() + 1, c.windowStart(), 0);
+            }
+            int max = limits.getMaxFailures();
             boolean locked = c.lockedAt(now);
             boolean full = c.failures() + c.inFlight() >= max;
+            boolean strictReject = strict && c.failures() > 0;
             boolean reject = switch (exemption) {
-                case NONE -> locked || full;
+                case NONE -> locked || full || strictReject;
                 case LOCK -> c.inFlight() >= max;
                 case FULL -> false;
             };
             if (reject) {
-                (locked && exemption == Exemption.NONE ? rejectedLocked : rejectedInFlight).get(kind).incrementAndGet();
-                Duration retry = locked ? Duration.ofMillis(c.lockedUntil() - now) : Duration.ofSeconds(1);
-                out[0] = new Reservation(false, null, locked, retry);
+                boolean lockedReject = locked && exemption == Exemption.NONE;
+                (lockedReject ? rejectedLocked : strictReject && !full ? rejectedStrict : rejectedInFlight)
+                        .get(kind).incrementAndGet();
+                Duration retry = locked ? Duration.ofMillis(c.lockedUntil() - now)
+                        : strictReject && !full
+                        ? Duration.ofMillis(Math.max(1000, c.windowStart() + limits.getWindow().toMillis() - now))
+                        : Duration.ofSeconds(1);
+                out[0] = new Reservation(false, null, locked, retry, Duration.ZERO);
                 return c.idleAt(now) ? null : c;
             }
-            out[0] = new Reservation(true, new Slot(kind, slotKey, overflowSlot, maxOverride), locked, Duration.ZERO);
+            out[0] = new Reservation(true, new Slot(kind, slotKey, false), locked, Duration.ZERO, Duration.ZERO);
             return new Counter(c.failures(), c.inFlight() + 1, c.windowStart(), c.lockedUntil());
         });
         return out[0];
+    }
+
+    /** Sleeps for an overflow delay (at most {@link #OVERFLOW_DELAY_CAP}); keeps the interrupt flag. */
+    public static void pause(Duration delay) {
+        if (delay == null || delay.isZero() || delay.isNegative()) {
+            return;
+        }
+        try {
+            Thread.sleep(delay.compareTo(OVERFLOW_DELAY_CAP) > 0 ? OVERFLOW_DELAY_CAP : delay);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    static Duration overflowDelay(int failures) {
+        Duration d = OVERFLOW_DELAY_STEP.multipliedBy(failures);
+        return d.compareTo(OVERFLOW_DELAY_CAP) > 0 ? OVERFLOW_DELAY_CAP : d;
     }
 
     private void release(List<Slot> slots, long now) {
@@ -507,11 +555,9 @@ public class LoginThrottle {
             int failures = c.failures();
             long windowStart = c.windowStart();
             long lockedUntil = c.lockedUntil();
-            int max = slot.maxFailures() > 0
-                    ? Math.min(slot.maxFailures(), limits.getMaxFailures()) : limits.getMaxFailures();
             if (outcome == Outcome.FAILURE) {
                 failures++;
-                if (failures >= max && lockedUntil <= now) {
+                if (!slot.overflow() && failures >= limits.getMaxFailures() && lockedUntil <= now) {
                     lockedUntil = now + limits.getLockDuration().toMillis();
                     lockedAfter[0] = failures;
                 }
@@ -537,7 +583,7 @@ public class LoginThrottle {
                     sanitize(clientId), seconds, failures);
         } else if (kind == Kind.CLIENT_ID) {
             log.warn("Login throttle: client '{}' in strict mode for {} s after {} failed attempts from all sources "
-                    + "(one failed attempt per source)", sanitize(clientId), seconds, failures);
+                    + "(a source with a failure is rejected until its window ends)", sanitize(clientId), seconds, failures);
         } else {
             log.warn("Login throttle: {} locked for {} s after {} failed attempts", kind.label, seconds, failures);
         }

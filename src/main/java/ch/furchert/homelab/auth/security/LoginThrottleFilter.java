@@ -46,6 +46,7 @@ public class LoginThrottleFilter extends OncePerRequestFilter {
             return;
         }
         try {
+            LoginThrottle.pause(admission.delay());
             chain.doFilter(request, response);
         } finally {
             Object outcome = request.getAttribute(LoginThrottle.OUTCOME_ATTRIBUTE);

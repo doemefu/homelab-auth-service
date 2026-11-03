@@ -73,6 +73,7 @@ public class ThrottlingClientSecretAuthenticationProvider implements Authenticat
         }
         LoginThrottle.Outcome outcome = LoginThrottle.Outcome.NONE;
         try {
+            LoginThrottle.pause(admission.delay());
             Authentication result = delegate.authenticate(authentication);
             outcome = result != null ? LoginThrottle.Outcome.SUCCESS : LoginThrottle.Outcome.NONE;
             return result;

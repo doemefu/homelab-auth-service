@@ -448,7 +448,7 @@ A lock logs one WARN without username or IP (a client lock names the client id):
 kubectl -n apps logs -l app=auth-service --tail=-1 --request-timeout=10s | grep "Login throttle:"
 # Login throttle: username locked for 300 s after 10 failed attempts
 # Login throttle: client 'device-service' locked for 300 s after 10 failed attempts
-# Login throttle: client 'device-service' in strict mode for 300 s after 50 failed attempts from all sources (one failed attempt per source)
+# Login throttle: client 'device-service' in strict mode for 300 s after 50 failed attempts from all sources (a source with a failure is rejected until its window ends)
 ```
 
 - Every minute with rejections: `Login throttle: rejected <n> attempts since the last report (username: <a> locked, <b> in-flight bound, <c> via overflow key; ...)` (counts only).
