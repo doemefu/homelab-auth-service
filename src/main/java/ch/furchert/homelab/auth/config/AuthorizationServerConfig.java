@@ -78,10 +78,9 @@ import java.util.Optional;
 @Slf4j
 public class AuthorizationServerConfig {
 
-    private static final String RSA_KEY_ID = "auth-service-v1";
-
     private final OidcClientProperties oidcClientProperties;
     private final RsaKeyProvider rsaKeyProvider;
+    private final RsaKeyProperties rsaKeyProperties;
     private final OidcUserInfoMapper userInfoMapper;
     private final ClientAuthorizationRequestValidator authorizationRequestValidator;
     private final ResourceIndicatorPolicy resourceIndicatorPolicy;
@@ -215,7 +214,7 @@ public class AuthorizationServerConfig {
         RSAPrivateKey privateKey = (RSAPrivateKey) rsaKeyProvider.getPrivateKey();
         RSAKey rsaKey = new RSAKey.Builder(publicKey)
                 .privateKey(privateKey)
-                .keyID(RSA_KEY_ID)
+                .keyID(rsaKeyProperties.getKeyId())
                 .build();
         return new ImmutableJWKSet<>(new JWKSet(rsaKey));
     }

@@ -21,6 +21,9 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.header.writers.ContentSecurityPolicyHeaderWriter;
+import org.springframework.security.web.header.writers.DelegatingRequestMatcherHeaderWriter;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -32,6 +35,15 @@ public class SecurityConfig {
 
     private static final String LOGIN_URL = "/login";
     private static final String ADMIN = "ADMIN";
+
+    /**
+     * Login page CSP (#106): same-origin and inline styles, no scripts (login.html has a style block and no
+     * user content).
+     * No {@code form-action}: browsers apply it to every redirect after the login POST, and the chain ends
+     * at the client's redirect URI on another origin, so it would break SSO.
+     */
+    static final String LOGIN_PAGE_CSP = "default-src 'none'; style-src 'self' 'unsafe-inline'; img-src 'self'; "
+            + "base-uri 'none'; frame-ancestors 'none'; object-src 'none'";
 
     /**
      * Chain 2: stateless resource-server for the admin REST API.
@@ -99,7 +111,11 @@ public class SecurityConfig {
                         .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED)
                 )
                 .addFilterBefore(new LoginThrottleFilter(loginThrottle, LOGIN_URL),
-                        UsernamePasswordAuthenticationFilter.class);
+                        UsernamePasswordAuthenticationFilter.class)
+                // CSP for the login page only (every method), not for actuator or Swagger in this chain.
+                .headers(headers -> headers.addHeaderWriter(new DelegatingRequestMatcherHeaderWriter(
+                        PathPatternRequestMatcher.withDefaults().matcher(LOGIN_URL),
+                        new ContentSecurityPolicyHeaderWriter(LOGIN_PAGE_CSP))));
 
         return http.build();
     }

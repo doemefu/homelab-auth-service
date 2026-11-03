@@ -627,6 +627,8 @@ The `{noop}` examples are local-only; production uses `{bcrypt}` hashes.
 | `APP_JWT_PRIVATE_KEY` | Path to private key | `classpath:keys/private.pem` |
 | `APP_JWT_PUBLIC_KEY` | Path to public key | `classpath:keys/public.pem` |
 | `SENTRY_DSN` | Sentry DSN | (disabled if not set) |
+| `APP_JWT_KEY_ID` | JWK `kid` of the signing key | `auth-service-v1` |
+| `SERVER_SERVLET_SESSION_COOKIE_SECURE` | `false` only for local http dev on a host other than `localhost` (the session cookie is `Secure` by default) | `true` |
 | `FLYWAY_BASELINE_ON_MIGRATE` | Flyway baseline mode | `false` |
 | `FLYWAY_BASELINE_VERSION` | Flyway baseline version | `4` |
 

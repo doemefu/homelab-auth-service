@@ -29,7 +29,7 @@ class JwtDecoderIdTokenTest {
 
     private final JWKSource<SecurityContext> jwkSource = jwkSource();
     // jwtDecoder(..) uses none of the config's injected collaborators.
-    private final JwtDecoder decoder = new AuthorizationServerConfig(null, null, null, null, null).jwtDecoder(jwkSource);
+    private final JwtDecoder decoder = new AuthorizationServerConfig(null, null, null, null, null, null).jwtDecoder(jwkSource);
 
     private static JWKSource<SecurityContext> jwkSource() {
         try {
