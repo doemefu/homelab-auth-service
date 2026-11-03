@@ -63,7 +63,6 @@ Push to `main` branch — **Flux CD handles everything automatically**.
 auth-service (OIDC Identity Provider)
 ├── OIDC SSO ├──> Grafana
 ├── OIDC SSO ├──> Home Assistant
-├── OIDC SSO ├──> n8n
 ├── OIDC SSO ├──> LiteLLM
 ├── OIDC SSO ├──> device-service
 └── JWKS ──> device-service & data-service (token validation)

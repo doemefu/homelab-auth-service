@@ -8,7 +8,7 @@ This document describes how external services, applications, and clients interac
 
 The auth-service exposes **three types of interfaces**:
 
-1. **OIDC Protocol Endpoints** — For OIDC-compatible clients (Grafana, Home Assistant, n8n, LiteLLM)
+1. **OIDC Protocol Endpoints** — For OIDC-compatible clients (Grafana, Home Assistant, LiteLLM)
 2. **REST API** — For programmatic user management (admin operations)
 3. **JWKS Endpoint** — For service-to-service token validation
 
@@ -181,21 +181,8 @@ ha_oidc_client_secret: <plaintext-secret>
 
 ### n8n
 
-n8n OIDC configuration:
-
-```json
-{
-  "oidc": {
-    "enabled": true,
-    "issuer": "https://auth.furchert.ch",
-    "clientId": "n8n",
-    "clientSecret": "<plaintext-secret>",
-    "redirectUri": "https://n8n.furchert.ch/rest/sso/oidc/callback",
-    "scopes": ["openid", "profile", "email"],
-    "usePkce": true
-  }
-}
-```
+No OIDC client: the n8n community edition cannot use OIDC (an enterprise feature), so n8n uses its own
+local login. The former `n8n` client was removed by Flyway V9.
 
 ### LiteLLM
 

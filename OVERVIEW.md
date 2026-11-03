@@ -18,7 +18,6 @@ The `homelab-auth-service` is the **central authentication and authorization ser
 auth-service (this service)
 ├── OIDC SSO ├──> Grafana (https://grafana.furchert.ch)
 ├── OIDC SSO ├──> Home Assistant (https://ha.furchert.ch)
-├── OIDC SSO ├──> n8n (https://n8n.furchert.ch)
 ├── OIDC SSO ├──> LiteLLM (https://ai.furchert.ch)
 ├── OIDC SSO ├──> device-service (https://device.furchert.ch)
 ├── OAuth2 ├──> claude-mcp-hub (claude.ai connector; audience-bound tokens for the MCP hub)

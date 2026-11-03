@@ -170,7 +170,6 @@ export APP_OIDC_ISSUER=http://localhost:8080
 export GRAFANA_CLIENT_SECRET="{noop}local-dev-secret"
 export HA_CLIENT_SECRET="{noop}local-dev-secret"
 export DEVICE_SERVICE_CLIENT_SECRET="{noop}local-dev-secret"
-export N8N_CLIENT_SECRET="{noop}local-dev-secret"
 export LITELLM_CLIENT_SECRET="{noop}local-dev-secret"
 ```
 
@@ -615,7 +614,6 @@ The `{noop}` examples are local-only; production uses `{bcrypt}` hashes.
 | `GRAFANA_CLIENT_SECRET` | Grafana OIDC client secret | `{noop}secret` |
 | `HA_CLIENT_SECRET` | Home Assistant OIDC client secret | `{noop}secret` |
 | `DEVICE_SERVICE_CLIENT_SECRET` | device-service OIDC client secret | `{noop}secret` |
-| `N8N_CLIENT_SECRET` | n8n OIDC client secret | `{noop}secret` |
 | `LITELLM_CLIENT_SECRET` | LiteLLM OIDC client secret | `{noop}secret` |
 
 ### Optional
