@@ -656,8 +656,9 @@ To add a new OIDC client to auth-service:
 > `psql` or, for IoT device clients, the admin API (§8). The steps below apply to the initial bootstrap of a new SSO client.
 
 > **Checklist (#143).** The client id becomes a reserved username (§4 "Reserved
-> usernames"): check that no user already has it (`DEPLOYMENT.md` § Runbooks
-> "Check usernames against client ids"). A new service scope (issued only through
+> usernames"): check the proposed id against existing users before configuring it
+> (`DEPLOYMENT.md` § Runbooks "Check usernames against client ids", query with
+> `NEW_CLIENT_ID`). A new service scope (issued only through
 > `client_credentials`) must be added to `ServiceScopes` and §1 "Service scopes".
 
 ### Step 1: Generate Client Secret
@@ -780,7 +781,7 @@ part of the public OIDC surface.
 `description` is optional, max 200 chars. Client ids and usernames share one
 namespace (#143): `POST` answers `409` when the id is already a client, is a
 configured client id (`app.oidc.clients`), or equals an existing username
-(ignoring case).
+(ignoring case and surrounding whitespace).
 
 **Create response** (`201`) — the `clientSecret` is plaintext and returned
 **exactly once**; it is stored only as a bcrypt hash and cannot be retrieved

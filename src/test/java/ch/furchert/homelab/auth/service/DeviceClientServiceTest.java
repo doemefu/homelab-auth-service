@@ -4,7 +4,6 @@ import ch.furchert.homelab.auth.config.OidcClientProperties;
 import ch.furchert.homelab.auth.dto.DeviceClientCreatedResponse;
 import ch.furchert.homelab.auth.exception.ResourceConflictException;
 import ch.furchert.homelab.auth.exception.ResourceNotFoundException;
-import ch.furchert.homelab.auth.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -37,8 +36,6 @@ class DeviceClientServiceTest {
     ClientKindLookup clientKindLookup;
     @Mock
     ReservedClientIds reservedClientIds;
-    @Mock
-    UserRepository userRepository;
 
     private OidcClientProperties properties;
 
@@ -51,7 +48,7 @@ class DeviceClientServiceTest {
         properties.getDeviceClients().setAccessTokenTtlSeconds(3600);
         properties.getDeviceClients().setAllowedScopes(List.of("mqtt:pub", "mqtt:sub"));
         service = new DeviceClientService(registeredClientRepository, jdbcTemplate, passwordEncoder,
-                clientKindLookup, properties, reservedClientIds, userRepository);
+                clientKindLookup, properties, reservedClientIds);
     }
 
     @Test
@@ -171,7 +168,7 @@ class DeviceClientServiceTest {
     @Test
     void create_rejectsClientIdEqualToAnExistingUsername() {
         when(registeredClientRepository.findByClientId("wa5-dev-user")).thenReturn(null);
-        when(userRepository.existsByUsernameIgnoreCase("wa5-dev-user")).thenReturn(true);
+        when(reservedClientIds.isUsernameTaken("wa5-dev-user")).thenReturn(true);
 
         assertThatThrownBy(() -> service.create("wa5-dev-user", null))
                 .isInstanceOf(ResourceConflictException.class)

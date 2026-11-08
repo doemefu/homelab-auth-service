@@ -66,6 +66,15 @@ class ReservedClientIdsTest {
     }
 
     @Test
+    void usernameTakenComparesNormalizedNames() {
+        String sql = "SELECT EXISTS (SELECT 1 FROM users WHERE lower(regexp_replace(username, '^\\s+|\\s+$', '', 'g')) = ?)";
+        when(jdbcTemplate.queryForObject(sql, Boolean.class, "alice")).thenReturn(true);
+
+        assertThat(reserved.isUsernameTaken(" Alice ")).isTrue();
+        assertThat(reserved.isUsernameTaken(" ")).isFalse();
+    }
+
+    @Test
     void lockUsesTheSharedTransactionScopedAdvisoryLock() {
         reserved.lockIdentityNamespace();
 

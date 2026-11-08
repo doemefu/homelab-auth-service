@@ -114,6 +114,27 @@ class ReservedClientIdUsernameIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void creatingADeviceClientNamedLikeAWhitespacePaddedUserIsRejected() throws Exception {
+        String stored = " WA5-Dev-Padded ";
+        String clientId = "wa5-dev-padded";
+        try {
+            User user = new User();
+            user.setUsername(stored);
+            user.setEmail("wa5-dev-padded@test.local");
+            user.setPasswordHash(passwordEncoder.encode("password123"));
+            user.setRole(Role.USER);
+            user.setStatus("ACTIVE");
+            userRepository.save(user);
+
+            asAdmin(post("/api/v1/clients"), "{\"clientId\":\"" + clientId + "\"}")
+                    .andExpect(status().isConflict());
+        } finally {
+            jdbc.update("DELETE FROM oauth2_registered_client WHERE client_id = ?", clientId);
+            deleteUser(stored);
+        }
+    }
+
+    @Test
     void ordinaryNamesStillWork() throws Exception {
         String name = "wa5-ordinary";
         try {

@@ -37,6 +37,19 @@ public class ReservedClientIds {
     }
 
     /**
+     * True when an existing username equals {@code name}, both compared without surrounding whitespace and
+     * ignoring case (used before a new client id is created).
+     */
+    public boolean isUsernameTaken(String name) {
+        if (name == null || name.isBlank()) {
+            return false;
+        }
+        return Boolean.TRUE.equals(jdbcTemplate.queryForObject(
+                "SELECT EXISTS (SELECT 1 FROM users WHERE lower(regexp_replace(username, '^\\s+|\\s+$', '', 'g')) = ?)",
+                Boolean.class, normalize(name)));
+    }
+
+    /**
      * Serialises user creates/renames against device-client creates until the surrounding transaction
      * ends, so both sides see each other's committed names. Call inside a transaction, before the checks.
      */
