@@ -45,6 +45,20 @@ All OIDC clients should use the following configuration:
 - `profile` (recommended)
 - `email` (recommended)
 
+### Service scopes
+
+`netmon:*`, `analytics:*`, `login-events:*` and `clients:admin` are service scopes:
+they are issued **only through `client_credentials`** (#143).
+
+- Requesting one at `/oauth2/authorize` returns an error redirect to the client's
+  `redirect_uri` with `error=invalid_scope`, before login and consent.
+- A token request of any other grant (`authorization_code`, `refresh_token`, …)
+  whose authorization holds a service scope is refused with `400 invalid_grant`;
+  the user signs in again with OIDC scopes only. A refresh that narrows the scopes
+  to non-service scopes (`scope=openid profile email`) is accepted.
+- The list lives in one place (`ServiceScopes`); a new service scope must be added
+  there and here.
+
 ### Token Response
 
 ```json
@@ -582,6 +596,15 @@ The REST API uses **Bearer token authentication** with JWT tokens obtained via O
 
 `GET /users?page=0&size=50` lists users ordered by `id` ascending (`page` zero-based, `size` 1–100, default 50; out-of-range values return `400`). Response: `{ "users": [<UserResponse>…], "page": 0, "size": 50, "totalElements": 7 }` — each entry has the same shape as `GET /users/{id}` (`id`, `username`, `email`, `role`, `status`, `createdAt`, `updatedAt`). The `clients:admin` scope does **not** grant access; a user token with role `ADMIN` is required (furchert-ch `/dashboard/auth` calls it server-side with the signed-in admin's access token).
 
+**Reserved usernames (#143).** Every registered client id is reserved as a username,
+compared ignoring case and surrounding whitespace: every `app.oidc.clients[*].client-id`
+in `application.yaml` (also when that client is not seeded yet) and every client id
+stored in `oauth2_registered_client`, including IoT device clients (§8). Today this is
+`grafana`, `homeassistant`, `device-service`, `litellm`, `furchert-ch`,
+`data-service`, `claude-mcp-hub`, `claude-club-mcp` and every device client id.
+`POST /users` or a rename via `PUT /users/{id}` to a reserved name answers `400`
+(`"Username is reserved: <name>"`); updates without a rename are not affected.
+
 Deleting a user, setting the user's status to `INACTIVE`, or changing the user's role revokes the user's authorizations and consents; reactivation restores nothing. After a role change the user's refresh tokens no longer work. A demotion applies to every token issued after it; a promotion applies after the user signs out (`/connect/logout`) and in again. Access tokens issued before the change stay valid until they expire (the client's access-token TTL). A request that sets the current role again revokes nothing.
 
 ### API Summary
@@ -631,6 +654,11 @@ To add a new OIDC client to auth-service:
 > first boot, editing or removing an existing client in `application.yaml` has
 > no effect — change it via a Flyway migration (precedent: `V6`, furchert-ch),
 > `psql` or, for IoT device clients, the admin API (§8). The steps below apply to the initial bootstrap of a new SSO client.
+
+> **Checklist (#143).** The client id becomes a reserved username (§4 "Reserved
+> usernames"): check that no user already has it (`DEPLOYMENT.md` § Runbooks
+> "Check usernames against client ids"). A new service scope (issued only through
+> `client_credentials`) must be added to `ServiceScopes` and §1 "Service scopes".
 
 ### Step 1: Generate Client Secret
 
@@ -749,7 +777,10 @@ part of the public OIDC surface.
 | `DELETE` | `/api/v1/clients/{clientId}` | — | `204` (idempotent) — see revocation note below |
 
 `clientId` must match `[a-z0-9-]{3,32}` (also the device's MQTT username).
-`description` is optional, max 200 chars.
+`description` is optional, max 200 chars. Client ids and usernames share one
+namespace (#143): `POST` answers `409` when the id is already a client, is a
+configured client id (`app.oidc.clients`), or equals an existing username
+(ignoring case).
 
 **Create response** (`201`) — the `clientSecret` is plaintext and returned
 **exactly once**; it is stored only as a bcrypt hash and cannot be retrieved

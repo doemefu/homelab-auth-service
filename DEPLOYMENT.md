@@ -318,6 +318,24 @@ kubectl -n apps exec postgresql-0 -c postgresql -- psql -U postgres -d homelabdb
   "SELECT client_id, client_kind, authorization_grant_types, client_authentication_methods, substring(client_secret from '^[{][^}]*[}]') AS secret_encoding FROM oauth2_registered_client ORDER BY client_kind, client_id"
 ```
 
+### Check usernames against client ids
+
+Read-only; prints client ids and counts only, never usernames (#143). Expected: no rows, `0`, `0`.
+```bash
+# Users whose name equals a stored client id (SSO or device), ignoring case:
+kubectl -n apps exec postgresql-0 -c postgresql -- psql -U postgres -d homelabdb -tAc \
+  "SELECT c.client_id, count(*) FROM users u JOIN oauth2_registered_client c ON lower(u.username) = lower(c.client_id) GROUP BY c.client_id"
+# Users whose name equals a configured client id (also covers clients not seeded yet):
+kubectl -n apps exec postgresql-0 -c postgresql -- psql -U postgres -d homelabdb -tAc \
+  "SELECT count(*) FROM users WHERE lower(username) IN ('grafana','homeassistant','device-service','litellm','furchert-ch','data-service','claude-mcp-hub','claude-club-mcp')"
+# Stored authorizations of a non-client_credentials grant that hold a service scope:
+kubectl -n apps exec postgresql-0 -c postgresql -- psql -U postgres -d homelabdb -tAc \
+  "SELECT count(*) FROM oauth2_authorization WHERE authorization_grant_type <> 'client_credentials' AND EXISTS (SELECT 1 FROM unnest(string_to_array(authorized_scopes, ',')) s WHERE s LIKE 'netmon:%' OR s LIKE 'analytics:%' OR s LIKE 'login-events:%' OR s = 'clients:admin')"
+```
+On a hit in the first two queries, rename that user via `PUT /api/v1/users/{id}` (furchert-ch `/dashboard/auth`).
+A hit in the third needs no action: such an authorization is refused at its next refresh and the user signs in again.
+Keep the configured list in the second query in step with `app.oidc.clients` in `application.yaml`.
+
 ### client_kind cache
 
 `ClientKindLookup` keeps each client's `client_kind` in memory; it only decides whether a `client_credentials` token

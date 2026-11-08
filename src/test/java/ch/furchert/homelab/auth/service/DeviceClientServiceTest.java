@@ -4,6 +4,7 @@ import ch.furchert.homelab.auth.config.OidcClientProperties;
 import ch.furchert.homelab.auth.dto.DeviceClientCreatedResponse;
 import ch.furchert.homelab.auth.exception.ResourceConflictException;
 import ch.furchert.homelab.auth.exception.ResourceNotFoundException;
+import ch.furchert.homelab.auth.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -34,6 +35,10 @@ class DeviceClientServiceTest {
     PasswordEncoder passwordEncoder;
     @Mock
     ClientKindLookup clientKindLookup;
+    @Mock
+    ReservedClientIds reservedClientIds;
+    @Mock
+    UserRepository userRepository;
 
     private OidcClientProperties properties;
 
@@ -45,8 +50,8 @@ class DeviceClientServiceTest {
         properties = new OidcClientProperties();
         properties.getDeviceClients().setAccessTokenTtlSeconds(3600);
         properties.getDeviceClients().setAllowedScopes(List.of("mqtt:pub", "mqtt:sub"));
-        service = new DeviceClientService(
-                registeredClientRepository, jdbcTemplate, passwordEncoder, clientKindLookup, properties);
+        service = new DeviceClientService(registeredClientRepository, jdbcTemplate, passwordEncoder,
+                clientKindLookup, properties, reservedClientIds, userRepository);
     }
 
     @Test
@@ -161,5 +166,28 @@ class DeviceClientServiceTest {
 
         assertThatThrownBy(() -> service.get("ghost"))
                 .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void create_rejectsClientIdEqualToAnExistingUsername() {
+        when(registeredClientRepository.findByClientId("wa5-dev-user")).thenReturn(null);
+        when(userRepository.existsByUsernameIgnoreCase("wa5-dev-user")).thenReturn(true);
+
+        assertThatThrownBy(() -> service.create("wa5-dev-user", null))
+                .isInstanceOf(ResourceConflictException.class)
+                .hasMessageContaining("not available");
+        verify(reservedClientIds).lockIdentityNamespace();
+        verify(registeredClientRepository, never()).save(any());
+    }
+
+    @Test
+    void create_rejectsConfiguredButUnseededClientId() {
+        when(registeredClientRepository.findByClientId("data-service")).thenReturn(null);
+        when(reservedClientIds.isReserved("data-service")).thenReturn(true);
+
+        assertThatThrownBy(() -> service.create("data-service", null))
+                .isInstanceOf(ResourceConflictException.class)
+                .hasMessageContaining("not available");
+        verify(registeredClientRepository, never()).save(any());
     }
 }

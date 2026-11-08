@@ -5,6 +5,7 @@ import ch.furchert.homelab.auth.dto.DeviceClientCreatedResponse;
 import ch.furchert.homelab.auth.dto.DeviceClientResponse;
 import ch.furchert.homelab.auth.exception.ResourceConflictException;
 import ch.furchert.homelab.auth.exception.ResourceNotFoundException;
+import ch.furchert.homelab.auth.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.EmptyResultDataAccessException;
@@ -50,11 +51,18 @@ public class DeviceClientService {
     private final PasswordEncoder passwordEncoder;
     private final ClientKindLookup clientKindLookup;
     private final OidcClientProperties properties;
+    private final ReservedClientIds reservedClientIds;
+    private final UserRepository userRepository;
 
     @Transactional
     public DeviceClientCreatedResponse create(String clientId, String description) {
+        reservedClientIds.lockIdentityNamespace();
         if (registeredClientRepository.findByClientId(clientId) != null) {
             throw new ResourceConflictException("Client '" + clientId + "' already exists");
+        }
+        // Client ids and usernames share one namespace (#143): no configured client id, no existing username.
+        if (reservedClientIds.isReserved(clientId) || userRepository.existsByUsernameIgnoreCase(clientId.strip())) {
+            throw new ResourceConflictException("Client id '" + clientId + "' is not available");
         }
 
         String plaintextSecret = generateSecret();

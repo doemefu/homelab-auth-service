@@ -45,6 +45,8 @@ class UserServiceTest {
     private PasswordEncoder passwordEncoder;
     @Mock
     private JdbcTemplate jdbcTemplate;
+    @Mock
+    private ReservedClientIds reservedClientIds;
 
     @InjectMocks
     private UserService userService;
@@ -355,4 +357,43 @@ class UserServiceTest {
         verify(jdbcTemplate).update("DELETE FROM oauth2_authorization WHERE principal_name = ?", "testuser");
     }
 
+
+    @Test
+    void createUser_withReservedClientId_throwsAndSavesNothing() {
+        CreateUserRequest request = new CreateUserRequest("Furchert-CH", "fc@example.com", "password123", null);
+        when(reservedClientIds.isReserved("Furchert-CH")).thenReturn(true);
+
+        assertThatThrownBy(() -> userService.createUser(request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Username is reserved");
+        verify(reservedClientIds).lockIdentityNamespace();
+        verify(userRepository, never()).save(any(User.class));
+    }
+
+    @Test
+    void updateUser_renameToReservedClientId_throwsWithoutRevokingOrSaving() {
+        UpdateUserRequest request = new UpdateUserRequest("device-service", null, null, null);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(existingUser));
+        when(reservedClientIds.isReserved("device-service")).thenReturn(true);
+
+        assertThatThrownBy(() -> userService.updateUser(1L, request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Username is reserved");
+        verify(reservedClientIds).lockIdentityNamespace();
+        verify(userRepository, never()).save(any(User.class));
+        verifyNoInteractions(jdbcTemplate);
+        assertThat(existingUser.getUsername()).isEqualTo("testuser");
+    }
+
+    @Test
+    void updateUser_withoutRename_skipsReservationCheck() {
+        UpdateUserRequest request = new UpdateUserRequest(null, "new@example.com", null, null);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(existingUser));
+        when(userRepository.existsByEmail("new@example.com")).thenReturn(false);
+        when(userRepository.save(any(User.class))).thenReturn(existingUser);
+
+        userService.updateUser(1L, request);
+
+        verifyNoInteractions(reservedClientIds);
+    }
 }

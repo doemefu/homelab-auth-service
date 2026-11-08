@@ -174,6 +174,18 @@ final class AuthCodeFlow {
         return mockMvc.perform(b);
     }
 
+    /** Refresh with client_secret_basic; {@code scope} is sent only when not null. */
+    ResultActions refreshBasic(String clientId, String secret, String refreshToken, String scope) throws Exception {
+        MockHttpServletRequestBuilder b = post("/oauth2/token")
+                .param("grant_type", "refresh_token").param("refresh_token", refreshToken)
+                .header("Authorization", "Basic " + Base64.getEncoder().encodeToString(
+                        (clientId + ":" + secret).getBytes(StandardCharsets.UTF_8)));
+        if (scope != null) {
+            b.param("scope", scope);
+        }
+        return mockMvc.perform(b);
+    }
+
     String hubCode(Req r, String username, String password, Pkce p) throws Exception {
         MvcResult afterLogin = authorizeAs(r, username, password, p);
         // Consent is remembered: the page appears only when this user has no stored consent yet;
