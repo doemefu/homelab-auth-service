@@ -7,7 +7,7 @@ Repo-specific facts for the `homelab-workflow` plugin agents; each agent reads o
 - Contract file: `INTERFACES.md` (OIDC endpoints, REST admin API, JWKS, JWT/ID-token claims). Cross-repo specs go to `../docs/`, not inline here.
 - Read first: `CLAUDE.md`, `INTERFACES.md`, `docs/PLAN.md`, and the touched code under `src/main/java/ch/furchert/homelab/auth/` (`config/`, `controller/`, `dto/`).
 - A contract change must also define: OIDC/OAuth2 surface affected (token endpoint, JWKS `/oauth2/jwks`, discovery document, ID/access-token claims), Flyway migration filename + columns + constraints and which other services read that table, env vars / K8s secret keys (name and purpose, never values), role/scope per endpoint.
-- Rollout order for breaking changes: this service ships first, consumers adapt after. Consumers: device-service and data-service (JWKS validation), furchert-ch (OIDC login + `client_credentials` with scope `netmon:read`), LiteLLM, Grafana, Home Assistant (OIDC clients; Open WebUI has no OIDC configured, n8n community edition cannot use OIDC).
+- Rollout order for breaking changes: this service ships first, consumers adapt after. Consumers: device-service and data-service (JWKS validation), furchert-ch (OIDC login + `client_credentials` with scopes `netmon:read`, `analytics:write`, `analytics:read`), LiteLLM, Grafana, Home Assistant (OIDC clients; Open WebUI has no OIDC configured, n8n community edition cannot use OIDC).
 - Hand-back line: "`INTERFACES.md` updated — implementer can start."
 
 ## implementer

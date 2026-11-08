@@ -36,7 +36,7 @@ All OIDC clients should use the following configuration:
 |------------|-----------|-------|
 | Authorization Code | ✅ Yes | With PKCE required |
 | Refresh Token | ✅ Yes | Issued automatically |
-| Client Credentials | ✅ Yes | IoT device clients (§8), `device-service` (`clients:admin`) and `furchert-ch` (`netmon:read`, §2) |
+| Client Credentials | ✅ Yes | IoT device clients (§8), `device-service` (`clients:admin`) and `furchert-ch` (`netmon:read`, `analytics:write`, `analytics:read`, §2) |
 | Password | ❌ No | Not supported |
 
 ### Required Scopes
@@ -261,6 +261,36 @@ requested scopes are granted, and a client without `netmon:read` gets
 `400 invalid_scope`. Existing databases receive the grant and scope through Flyway
 `V6__furchert_ch_client_credentials.sql`; fresh databases get them from
 `application.yaml` via the seeder.
+
+### furchert-ch — service tokens for web analytics (`analytics:write`, `analytics:read`)
+
+The `furchert-ch` client also holds the scopes `analytics:write` and
+`analytics:read` for `client_credentials` service tokens to the data-service
+web-analytics API (contract: `../docs/100-web-analytics.md` §11). No new client
+and no new secret: the request uses the existing furchert-ch client secret, with
+the same cluster-internal transport as the `netmon:read` token above.
+
+| Scope | Used by (furchert-ch) | Checked by (data-service) |
+|-------|-----------------------|---------------------------|
+| `analytics:write` | forward queue | `POST /api/webanalytics/events` |
+| `analytics:read` | `/dashboard/analytics` | `GET /api/webanalytics/*` |
+
+data-service accepts a token only with the scope **and** `sub` in its configured
+client allowlist (`webanalytics.api.write-clients` / `read-clients`).
+
+```bash
+curl -s -u "furchert-ch:${OIDC_CLIENT_SECRET}" \
+  -d 'grant_type=client_credentials&scope=analytics:write' \
+  http://auth-service.apps.svc.cluster.local:8080/oauth2/token
+```
+
+furchert-ch requests exactly one scope per token (one token for `netmon:read`,
+one for `analytics:write`, one for `analytics:read`) and never combines them.
+The access token carries `sub=furchert-ch`, `aud=furchert-ch` and
+`scope=["analytics:write"]` or `scope=["analytics:read"]`, with no `role` and no
+`device_id` claim; a client without the scope gets `400 invalid_scope`. Existing
+databases receive the scopes through Flyway `V10__furchert_ch_analytics_scopes.sql`;
+fresh databases get them from `application.yaml` via the seeder.
 
 ### data-service — login-event pull (`login-events:read`)
 
