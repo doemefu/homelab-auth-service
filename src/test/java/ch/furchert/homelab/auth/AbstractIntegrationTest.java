@@ -84,7 +84,8 @@ public abstract class AbstractIntegrationTest {
         registry.add("app.oidc.clients[4].scopes[2]", () -> "email");
 
         // clients[5]: furchert-ch — mirrors application.yaml (auth_code for dashboard SSO
-        // + client_credentials with netmon:read for data-service, docs/060 §7.5).
+        // + client_credentials with netmon:read for data-service, docs/060 §7.5, and
+        // analytics:write / analytics:read, docs/100 §11).
         registry.add("app.oidc.clients[5].client-id", () -> "furchert-ch");
         registry.add("app.oidc.clients[5].client-secret", () -> "{noop}furchert-ch-secret");
         registry.add("app.oidc.clients[5].redirect-uris[0]", () -> "https://furchert.test.local/api/auth/callback/furchert-ch");
@@ -93,6 +94,8 @@ public abstract class AbstractIntegrationTest {
         registry.add("app.oidc.clients[5].scopes[1]", () -> "profile");
         registry.add("app.oidc.clients[5].scopes[2]", () -> "email");
         registry.add("app.oidc.clients[5].scopes[3]", () -> "netmon:read");
+        registry.add("app.oidc.clients[5].scopes[4]", () -> "analytics:write");
+        registry.add("app.oidc.clients[5].scopes[5]", () -> "analytics:read");
         registry.add("app.oidc.clients[5].grant-types[0]", () -> "authorization_code");
         registry.add("app.oidc.clients[5].grant-types[1]", () -> "refresh_token");
         registry.add("app.oidc.clients[5].grant-types[2]", () -> "client_credentials");

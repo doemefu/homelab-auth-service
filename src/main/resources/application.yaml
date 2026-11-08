@@ -91,10 +91,11 @@ app:
         post-logout-redirect-uris:
           - https://furchert.ch
           - http://localhost:3000
-        scopes: [ openid, profile, email, "netmon:read" ]
+        scopes: [ openid, profile, email, "netmon:read", "analytics:write", "analytics:read" ]
         # furchert-ch has auth_code (dashboard SSO) and client_credentials (service
-        # token with netmon:read for data-service, docs/060 §7.5). Existing databases
-        # get the extra grant + scope via Flyway V6 — the seeder skips existing clients.
+        # tokens for data-service, one scope per token: netmon:read, docs/060 §7.5;
+        # analytics:write and analytics:read, docs/100 §11). Existing databases get the
+        # extra grant + scopes via Flyway V6 and V10 — the seeder skips existing clients.
         grant-types: [ authorization_code, refresh_token, client_credentials ]
       - client-id: data-service
         # Pulls the login-event outbox (docs/060 §7.6). OPTIONAL: the empty default keeps the IdP

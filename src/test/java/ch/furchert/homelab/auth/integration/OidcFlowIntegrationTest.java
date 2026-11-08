@@ -6,6 +6,8 @@ import ch.furchert.homelab.auth.entity.User;
 import ch.furchert.homelab.auth.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -295,6 +297,67 @@ class OidcFlowIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").value("invalid_scope"))
                 .andExpect(jsonPath("$.access_token").doesNotExist());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"analytics:write", "analytics:read"})
+    void furchertChAnalyticsServiceTokenCarriesOnlyTheRequestedScope(String scope) throws Exception {
+        // WA-0 (#142, docs/100 §11): one service token per scope, sub = the client, no user claims.
+        JsonNode claims = furchertChServiceTokenClaims("grant_type=client_credentials&scope=" + scope);
+
+        assertThat(claims.get("sub").asString()).isEqualTo("furchert-ch");
+        JsonNode aud = claims.get("aud");
+        List<String> audiences = aud.isArray()
+                ? aud.values().stream().map(JsonNode::asString).toList()
+                : List.of(aud.asString());
+        assertThat(audiences).containsExactly("furchert-ch");
+        assertThat(claims.get("scope").values().stream().map(JsonNode::asString).toList())
+                .containsExactly(scope);
+        assertThat(claims.has("role")).isFalse();
+        assertThat(claims.has("device_id")).isFalse();
+    }
+
+    @Test
+    void clientCredentialsWithoutScopeGrantsNoServiceScope() throws Exception {
+        // Without a scope parameter the token must not bundle netmon:read and the analytics scopes.
+        JsonNode claims = furchertChServiceTokenClaims("grant_type=client_credentials");
+
+        List<String> scopes = claims.has("scope")
+                ? claims.get("scope").values().stream().map(JsonNode::asString).toList()
+                : List.of();
+        assertThat(scopes).doesNotContain("netmon:read", "analytics:write", "analytics:read");
+    }
+
+    @Test
+    void clientCredentialsRejectsAnalyticsScopeForClientWithoutThatScope() throws Exception {
+        // device-service has the client_credentials grant but no analytics scope.
+        String basic = Base64.getEncoder().encodeToString(
+                "device-service:device-service-secret".getBytes(StandardCharsets.UTF_8));
+
+        mockMvc.perform(post("/oauth2/token")
+                        .header("Authorization", "Basic " + basic)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_FORM_URLENCODED)
+                        .content("grant_type=client_credentials&scope=analytics:write"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("invalid_scope"))
+                .andExpect(jsonPath("$.access_token").doesNotExist());
+    }
+
+    private JsonNode furchertChServiceTokenClaims(String form) throws Exception {
+        String basic = Base64.getEncoder().encodeToString(
+                "furchert-ch:furchert-ch-secret".getBytes(StandardCharsets.UTF_8));
+        MvcResult result = mockMvc.perform(post("/oauth2/token")
+                        .header("Authorization", "Basic " + basic)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_FORM_URLENCODED)
+                        .content(form))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.access_token").exists())
+                .andExpect(jsonPath("$.id_token").doesNotExist())
+                .andReturn();
+        String accessToken = objectMapper.readTree(result.getResponse().getContentAsString())
+                .get("access_token").asString();
+        return objectMapper.readTree(new String(
+                Base64.getUrlDecoder().decode(accessToken.split("\\.")[1]), StandardCharsets.UTF_8));
     }
 
     @Test

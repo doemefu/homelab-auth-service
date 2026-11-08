@@ -21,6 +21,7 @@
 
 ### Added
 
+- `furchert-ch` client gains the scopes `analytics:write` and `analytics:read` for `client_credentials` service tokens to the data-service web-analytics API, one scope per token (web analytics WA-0, homelab#348 / #142, `docs/100-web-analytics.md` §11). Client and secret are reused. Flyway V10 adds both scopes to existing databases idempotently.
 - `claude-club-mcp` client for the club-assistant MCP connector (club-assistant D67): same shape as `claude-mcp-hub` (confidential, `authorization_code` + `refresh_token`, PKCE, consent page, 10-minute `at+jwt` access tokens, rotating refresh tokens), scope `club:read` only, `aud` and the only allowed `resource` = `https://club-mcp.furchert.ch/mcp`, owner-only allowlist. Configuration only, no Java change. Optional env vars `CLAUDE_CLUB_MCP_CLIENT_SECRET` and `CLAUDE_CLUB_MCP_ALLOWED_USERS` (Secret `homelab-auth-secrets` keys `claude-club-mcp-client-secret` and `claude-club-mcp-allowed-users`, both `optional: true`); without the secret the client is not seeded, without the allowlist every authorization request is rejected.
 - `GET /api/v1/users?page&size`: paginated user list (ordered by id, `size` 1–100, default 50), `ADMIN` only — backs the furchert-ch `/dashboard/auth` admin GUI (doemefu/furchert-ch#44)
 - OIDC Identity Provider via Spring Authorization Server — SSO for all furchert.ch homelab services
