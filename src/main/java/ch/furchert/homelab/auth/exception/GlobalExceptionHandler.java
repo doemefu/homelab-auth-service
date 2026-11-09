@@ -9,6 +9,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authorization.AuthorizationDeniedException;
 import org.springframework.validation.FieldError;
+import org.springframework.web.ErrorResponse;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -85,8 +86,27 @@ public class GlobalExceptionHandler {
                 .body(errorBody(HttpStatus.CONFLICT, ex.getMessage(), null));
     }
 
+    /**
+     * Last resort. Spring MVC request errors ({@link ErrorResponse}: no handler 404, unsupported method 405 with
+     * {@code Allow}, unsupported media type 415, and others such as a missing parameter 400 or an upload size 413)
+     * keep their own status and headers (#147). The message is the HTTP reason phrase, never the exception detail,
+     * which echoes request input; a {@code ResponseStatusException}'s reason text is replaced the same way (nothing
+     * throws it today). Everything else is unexpected: 500 and an ERROR log.
+     */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleGeneric(Exception ex) {
+        if (ex instanceof ErrorResponse errorResponse) {
+            HttpStatus status = HttpStatus.resolve(errorResponse.getStatusCode().value());
+            if (status != null) {
+                if (status.is5xxServerError()) {
+                    log.error("Unhandled exception", ex);
+                } else {
+                    log.debug("Request error {}: {}", status.value(), ex.getClass().getSimpleName());
+                }
+                return ResponseEntity.status(status).headers(errorResponse.getHeaders())
+                        .body(errorBody(status, status.getReasonPhrase(), null));
+            }
+        }
         log.error("Unhandled exception", ex);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(errorBody(HttpStatus.INTERNAL_SERVER_ERROR, "Internal server error", null));
