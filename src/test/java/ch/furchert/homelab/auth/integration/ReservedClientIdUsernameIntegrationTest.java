@@ -53,11 +53,16 @@ class ReservedClientIdUsernameIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void creatingAUserNamedLikeAStoredClientIsRejected() throws Exception {
-        createUser("furchert-ch").andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error").value("Username is reserved: furchert-ch"));
-        createUser("HomeAssistant").andExpect(status().isBadRequest());
-        assertThat(userRepository.findByUsername("furchert-ch")).isEmpty();
-        assertThat(userRepository.findByUsername("HomeAssistant")).isEmpty();
+        try {
+            createUser("furchert-ch").andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error").value("Username is reserved: furchert-ch"));
+            createUser("HomeAssistant").andExpect(status().isBadRequest());
+            assertThat(userRepository.findByUsername("furchert-ch")).isEmpty();
+            assertThat(userRepository.findByUsername("HomeAssistant")).isEmpty();
+        } finally {
+            deleteUser("furchert-ch");
+            deleteUser("HomeAssistant");
+        }
     }
 
     @Test

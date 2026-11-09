@@ -15,6 +15,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -153,12 +154,18 @@ class ServiceScopeAuthorizationCodeTest extends AbstractIntegrationTest {
         mockMvc.perform(get("/.well-known/openid-configuration"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.pushed_authorization_request_endpoint").doesNotExist());
+        // A request that an enabled PAR endpoint would accept (PKCE, registered redirect_uri, OIDC scopes only),
+        // so only a disabled endpoint can make it fail.
+        AuthCodeFlow.Pkce p = AuthCodeFlow.pkce();
         MvcResult par = mockMvc.perform(post("/oauth2/par")
                         .header("Authorization", "Basic " + Base64.getEncoder().encodeToString(
                                 (FC + ":" + FC_SECRET).getBytes(StandardCharsets.UTF_8)))
                         .param("response_type", "code").param("client_id", FC)
-                        .param("redirect_uri", FC_CALLBACK).param("scope", "openid netmon:read"))
+                        .param("redirect_uri", FC_CALLBACK).param("scope", OIDC).param("state", "test-state")
+                        .param("code_challenge", p.challenge()).param("code_challenge_method", "S256"))
                 .andReturn();
+        // No PAR filter handles the request: it falls through to MVC, which has no handler for the path.
+        assertThat(par.getResolvedException()).isInstanceOf(NoResourceFoundException.class);
         assertThat(par.getResponse().getStatus()).isNotEqualTo(201);
         assertThat(par.getResponse().getContentAsString()).doesNotContain("request_uri");
     }

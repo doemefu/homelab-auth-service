@@ -601,7 +601,8 @@ compared ignoring case and surrounding whitespace: every `app.oidc.clients[*].cl
 in `application.yaml` (also when that client is not seeded yet) and every client id
 stored in `oauth2_registered_client`, including IoT device clients (§8). Today this is
 `grafana`, `homeassistant`, `device-service`, `litellm`, `furchert-ch`,
-`data-service`, `claude-mcp-hub`, `claude-club-mcp` and every device client id.
+`data-service`, `claude-mcp-hub`, `claude-club-mcp` and every device client id
+(keep this list in step with `app.oidc.clients` in `application.yaml`).
 `POST /users` or a rename via `PUT /users/{id}` to a reserved name answers `400`
 (`"Username is reserved: <name>"`); updates without a rename are not affected.
 
@@ -658,7 +659,8 @@ To add a new OIDC client to auth-service:
 > **Checklist (#143).** The client id becomes a reserved username (§4 "Reserved
 > usernames"): check the proposed id against existing users before configuring it
 > (`DEPLOYMENT.md` § Runbooks "Check usernames against client ids", query with
-> `NEW_CLIENT_ID`). A new service scope (issued only through
+> `NEW_CLIENT_ID`), then add it to the §4 list and to the configured-id query in that
+> runbook. A new service scope (issued only through
 > `client_credentials`) must be added to `ServiceScopes` and §1 "Service scopes".
 
 ### Step 1: Generate Client Secret
