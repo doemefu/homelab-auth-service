@@ -357,7 +357,6 @@ class UserServiceTest {
         verify(jdbcTemplate).update("DELETE FROM oauth2_authorization WHERE principal_name = ?", "testuser");
     }
 
-
     @Test
     void createUser_withReservedClientId_throwsAndSavesNothing() {
         CreateUserRequest request = new CreateUserRequest("Furchert-CH", "fc@example.com", "password123", null);
