@@ -29,9 +29,14 @@ public class UserService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JdbcTemplate jdbcTemplate;
+    private final ReservedClientIds reservedClientIds;
 
     @Transactional
     public UserResponse createUser(CreateUserRequest request) {
+        reservedClientIds.lockIdentityNamespace();
+        if (reservedClientIds.isReserved(request.username())) {
+            throw new IllegalArgumentException("Username is reserved: " + request.username());
+        }
         if (userRepository.existsByUsername(request.username())) {
             throw new IllegalArgumentException("Username already taken: " + request.username());
         }
@@ -70,6 +75,10 @@ public class UserService {
         User user = findById(id);
 
         if (request.username() != null && !request.username().equals(user.getUsername())) {
+            reservedClientIds.lockIdentityNamespace();
+            if (reservedClientIds.isReserved(request.username())) {
+                throw new IllegalArgumentException("Username is reserved: " + request.username());
+            }
             if (userRepository.existsByUsername(request.username())) {
                 throw new IllegalArgumentException("Username already taken: " + request.username());
             }

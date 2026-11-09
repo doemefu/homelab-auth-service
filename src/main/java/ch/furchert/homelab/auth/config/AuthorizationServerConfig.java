@@ -12,6 +12,7 @@ import ch.furchert.homelab.auth.security.OidcUserInfoMapper;
 import ch.furchert.homelab.auth.security.ResourceIndicatorPolicy;
 import ch.furchert.homelab.auth.security.ResourceIndicatorTokenRequestGuard;
 import ch.furchert.homelab.auth.security.RsaKeyProvider;
+import ch.furchert.homelab.auth.security.ServiceScopes;
 import ch.furchert.homelab.auth.security.ThrottlingClientSecretAuthenticationProvider;
 import ch.furchert.homelab.auth.service.ClientKindLookup;
 import com.nimbusds.jose.jwk.JWKSet;
@@ -304,6 +305,8 @@ public class AuthorizationServerConfig {
      *       grants get header {@code typ: at+jwt}, {@code aud} = [configured audience] and a
      *       {@code client_id} claim, and no {@code role} or {@code device_id} (docs/080 §4.2).</li>
      * </ul>
+     * Tokens of any grant other than client_credentials whose authorized scopes contain a service scope
+     * ({@link ServiceScopes}) are refused with {@code invalid_grant} (#143).
      */
     @Bean
     public OAuth2TokenCustomizer<JwtEncodingContext> tokenCustomizer(ClientKindLookup clientKindLookup,
@@ -312,6 +315,14 @@ public class AuthorizationServerConfig {
             boolean isAccessToken = OAuth2TokenType.ACCESS_TOKEN.equals(context.getTokenType());
             boolean isIdToken = "id_token".equals(context.getTokenType().getValue());
             if (!isAccessToken && !isIdToken) return;
+
+            // Service scopes are issued only through client_credentials (#143). Fail closed for every other
+            // grant, before any client-specific shaping; invalid_grant tells the client to sign in again.
+            if (!AuthorizationGrantType.CLIENT_CREDENTIALS.equals(context.getAuthorizationGrantType())
+                    && !ServiceScopes.serviceScopesIn(context.getAuthorizedScopes()).isEmpty()) {
+                throw new OAuth2AuthenticationException(new OAuth2Error(OAuth2ErrorCodes.INVALID_GRANT,
+                        "This scope is only available to client_credentials", null));
+            }
 
             // Audience-bound clients (docs/080 §4.2): tokens for one resource server only. Limited to
             // user-driven grants, so a device client that happens to share the client_id is unaffected.

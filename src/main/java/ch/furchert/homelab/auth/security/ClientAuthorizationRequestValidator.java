@@ -18,7 +18,8 @@ import java.util.function.Consumer;
 /**
  * Runs after SAS's default authorization-request validator (redirect_uri, scope) for every client.
  * Rejects a client marked audience-bound whose configuration is missing with an access_denied error
- * redirect, a resource parameter that is not allowed for the client with an invalid_target error
+ * redirect, a service scope (issued only through client_credentials, {@link ServiceScopes}) with an
+ * invalid_scope error redirect, a resource parameter that is not allowed for the client with an invalid_target error
  * redirect, and an authenticated user who is not on the client's allowlist with an access_denied
  * error redirect (before any consent page). Registered on the authorization endpoint only; if pushed
  * authorization requests (PAR) are ever enabled, it must be added to the PAR endpoint as well.
@@ -40,6 +41,11 @@ public class ClientAuthorizationRequestValidator implements Consumer<OAuth2Autho
         if (properties.isAudienceBoundWithoutDefinition(client)) {
             log.warn("Client '{}' is marked audience-bound but has no configured audience; request rejected", clientId);
             throw error(OAuth2ErrorCodes.ACCESS_DENIED, "This client is not configured", request);
+        }
+        // Service scopes are issued only through client_credentials (#143); checked before login and consent.
+        if (!ServiceScopes.serviceScopesIn(request.getScopes()).isEmpty()) {
+            log.info("Authorization request for client '{}' rejected: service scope requested", clientId);
+            throw error(OAuth2ErrorCodes.INVALID_SCOPE, "This scope is only available to client_credentials", request);
         }
         if (!resourcePolicy.isAllowed(client, ResourceIndicatorPolicy.values(
                 request.getAdditionalParameters().get(ResourceIndicatorPolicy.PARAMETER)))) {

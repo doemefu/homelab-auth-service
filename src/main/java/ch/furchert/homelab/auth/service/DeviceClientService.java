@@ -50,11 +50,17 @@ public class DeviceClientService {
     private final PasswordEncoder passwordEncoder;
     private final ClientKindLookup clientKindLookup;
     private final OidcClientProperties properties;
+    private final ReservedClientIds reservedClientIds;
 
     @Transactional
     public DeviceClientCreatedResponse create(String clientId, String description) {
+        reservedClientIds.lockIdentityNamespace();
         if (registeredClientRepository.findByClientId(clientId) != null) {
             throw new ResourceConflictException("Client '" + clientId + "' already exists");
+        }
+        // Client ids and usernames share one namespace (#143): no configured client id, no existing username.
+        if (reservedClientIds.isReserved(clientId) || reservedClientIds.isUsernameTaken(clientId)) {
+            throw new ResourceConflictException("Client id '" + clientId + "' is not available");
         }
 
         String plaintextSecret = generateSecret();

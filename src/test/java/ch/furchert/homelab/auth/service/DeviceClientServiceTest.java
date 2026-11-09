@@ -34,6 +34,8 @@ class DeviceClientServiceTest {
     PasswordEncoder passwordEncoder;
     @Mock
     ClientKindLookup clientKindLookup;
+    @Mock
+    ReservedClientIds reservedClientIds;
 
     private OidcClientProperties properties;
 
@@ -45,8 +47,8 @@ class DeviceClientServiceTest {
         properties = new OidcClientProperties();
         properties.getDeviceClients().setAccessTokenTtlSeconds(3600);
         properties.getDeviceClients().setAllowedScopes(List.of("mqtt:pub", "mqtt:sub"));
-        service = new DeviceClientService(
-                registeredClientRepository, jdbcTemplate, passwordEncoder, clientKindLookup, properties);
+        service = new DeviceClientService(registeredClientRepository, jdbcTemplate, passwordEncoder,
+                clientKindLookup, properties, reservedClientIds);
     }
 
     @Test
@@ -161,5 +163,28 @@ class DeviceClientServiceTest {
 
         assertThatThrownBy(() -> service.get("ghost"))
                 .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void create_rejectsClientIdEqualToAnExistingUsername() {
+        when(registeredClientRepository.findByClientId("wa5-dev-user")).thenReturn(null);
+        when(reservedClientIds.isUsernameTaken("wa5-dev-user")).thenReturn(true);
+
+        assertThatThrownBy(() -> service.create("wa5-dev-user", null))
+                .isInstanceOf(ResourceConflictException.class)
+                .hasMessageContaining("not available");
+        verify(reservedClientIds).lockIdentityNamespace();
+        verify(registeredClientRepository, never()).save(any());
+    }
+
+    @Test
+    void create_rejectsConfiguredButUnseededClientId() {
+        when(registeredClientRepository.findByClientId("data-service")).thenReturn(null);
+        when(reservedClientIds.isReserved("data-service")).thenReturn(true);
+
+        assertThatThrownBy(() -> service.create("data-service", null))
+                .isInstanceOf(ResourceConflictException.class)
+                .hasMessageContaining("not available");
+        verify(registeredClientRepository, never()).save(any());
     }
 }
