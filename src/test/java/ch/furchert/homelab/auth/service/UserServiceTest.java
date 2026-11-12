@@ -47,6 +47,8 @@ class UserServiceTest {
     private JdbcTemplate jdbcTemplate;
     @Mock
     private ReservedClientIds reservedClientIds;
+    @Mock
+    private PasswordPolicy passwordPolicy;
 
     @InjectMocks
     private UserService userService;

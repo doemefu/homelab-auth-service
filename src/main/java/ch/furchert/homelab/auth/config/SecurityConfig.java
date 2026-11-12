@@ -3,6 +3,7 @@ package ch.furchert.homelab.auth.config;
 import ch.furchert.homelab.auth.security.LoginThrottle;
 import ch.furchert.homelab.auth.security.LoginThrottleFilter;
 import jakarta.servlet.DispatcherType;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
@@ -13,9 +14,6 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.GrantedAuthority;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-import org.springframework.security.crypto.factory.PasswordEncoderFactories;
-import org.springframework.security.crypto.password.DelegatingPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
@@ -24,6 +22,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.security.web.header.writers.ContentSecurityPolicyHeaderWriter;
 import org.springframework.security.web.header.writers.DelegatingRequestMatcherHeaderWriter;
 import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
+import org.springframework.util.Assert;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -154,16 +153,21 @@ public class SecurityConfig {
     }
 
     /**
-     * DelegatingPasswordEncoder supports {bcrypt}, {noop}, etc. prefixes used
-     * for OIDC client secrets, while still matching legacy BCrypt user password
-     * hashes stored without a prefix (via setDefaultPasswordEncoderForMatches).
+     * User passwords: {@code {bcrypt}} at {@code app.password.bcrypt-strength} (default 12). The only
+     * {@link PasswordEncoder} bean, used by the global login provider and {@code UserService}; client secrets
+     * use {@link #clientSecretEncoder()} (see {@link PasswordEncoders}).
      */
     @Bean
-    public PasswordEncoder passwordEncoder() {
-        DelegatingPasswordEncoder encoder =
-                (DelegatingPasswordEncoder) PasswordEncoderFactories.createDelegatingPasswordEncoder();
-        encoder.setDefaultPasswordEncoderForMatches(new BCryptPasswordEncoder());
-        return encoder;
+    public PasswordEncoder passwordEncoder(@Value("${app.password.bcrypt-strength:12}") int bcryptStrength) {
+        Assert.isTrue(bcryptStrength >= 10 && bcryptStrength <= 16,
+                "app.password.bcrypt-strength must be between 10 and 16");
+        return PasswordEncoders.delegating(bcryptStrength);
+    }
+
+    /** OAuth client secrets: bcrypt cost 10, for the authorization server and device clients. */
+    @Bean
+    public ClientSecretEncoder clientSecretEncoder() {
+        return new ClientSecretEncoder(PasswordEncoders.clientSecrets());
     }
 
     /**
