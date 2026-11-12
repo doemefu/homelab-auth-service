@@ -92,11 +92,16 @@ rm private.pem public.pem
 
 2. **Configure Cloudflare Tunnel** (see above)
 
-3. **Bootstrap first admin:**
+3. **Bootstrap first admin.** This direct insert bypasses the API's password policy, so pick a password that meets
+   it: at least 15 characters, at most 72 bytes, not a common password, not the username or e-mail address
+   (`INTERFACES.md` §4 "Password policy"). `htpasswd` prompts for it, so it never lands in the shell history or the
+   process list:
 ```bash
-HASH=$(htpasswd -bnBC 12 "" yourpassword | tr -d ':\n')
-kubectl exec -n apps deploy/postgresql -- psql -U postgres -d homelabdb \
-  -c "INSERT INTO users (username, email, password_hash, role, status) VALUES ('admin', 'admin@homelab.local', '${HASH}', 'ADMIN', 'ACTIVE');"
+HASH="{bcrypt}$(htpasswd -nBC 12 "" | tr -d ':\n')"   # prompts twice; cost 12 = the default user cost
+kubectl -n apps exec -i postgresql-0 -c postgresql -- psql -U postgres -d homelabdb -v ON_ERROR_STOP=1 <<SQL
+INSERT INTO users (username, email, password_hash, role, status) VALUES ('admin', 'admin@homelab.local', '${HASH}', 'ADMIN', 'ACTIVE');
+SQL
+unset HASH
 ```
 
 4. **Deploy:** Push to `main` or `kubectl apply -k k8s/`
@@ -646,6 +651,44 @@ Common: Insufficient CPU/memory, nodeSelector mismatch, image not available for 
 
 ---
 
+### Password policy and hashing cost (#150)
+
+- **Policy** (contract: `INTERFACES.md` §4 "Password policy"): at least 15 characters, at most 72 bytes in UTF-8,
+  not on the bundled list of common passwords (`src/main/resources/password-blocklist.txt`, provenance in its
+  header), not equal to the username or the e-mail address or its parts. No composition rules, no expiry. It holds
+  for passwords set through the API (`POST /api/v1/users`, `POST /api/v1/users/{id}/reset-password`); values
+  written straight to the database (bootstrap above, psql) bypass it. Existing passwords keep working; the policy
+  applies at the next change.
+- **Costs:** user passwords bcrypt `APP_PASSWORD_BCRYPT_STRENGTH` (default 12, allowed 10–16); client secrets stay
+  at cost 10. A user hash with a lower cost, without the `{bcrypt}` prefix or with `{noop}` is re-encoded at the
+  user's next successful login (only while the stored hash is still the one that was checked). Client secrets
+  stored as `{noop}` are re-encoded at cost 10 at the client's next authentication; cost-10 secrets stay as they
+  are. The encoders know only `{bcrypt}`, `{noop}` and unprefixed bcrypt hashes; any other stored format no longer
+  verifies.
+- **Measure before deploying** (owner, once): bcrypt time on raspi4, the slowest node auth-service can run on. On
+  raspi4 (`apache2-utils`; the value is a throwaway, not a password):
+```bash
+for c in 10 11 12; do /usr/bin/time -f "cost $c: %e s" htpasswd -nbBC "$c" x timing-test-value >/dev/null; done
+```
+  Keep 12 if one cost-12 hash takes at most about 300 ms; otherwise set `APP_PASSWORD_BCRYPT_STRENGTH` to `"11"` in
+  the container `env` of `k8s/deployment.yaml` (pull request). Java's bcrypt is not faster than `htpasswd`, so treat
+  a value near the limit as over it. Record the measured values here:
+  - raspi4: _not measured yet_
+- **Hash census** (owner, read-only, prints counts and cost digits only, never secret characters). Run it before
+  the deploy and again 24 h after:
+```bash
+kubectl -n apps exec -i postgresql-0 -c postgresql -- psql -U postgres -d homelabdb -v ON_ERROR_STOP=1 <<'SQL'
+SELECT substring(password_hash from '\$2[aby]?\$[0-9]{2}\$') AS cost, left(password_hash,8) = '{bcrypt}' AS prefixed, count(*) FROM users GROUP BY 1,2;
+SELECT CASE WHEN client_secret LIKE '{noop}%' THEN 'noop' WHEN client_secret ~ '^\{bcrypt\}\$2[aby]?\$10\$' THEN 'bcrypt10' WHEN client_secret LIKE '{bcrypt}%' THEN 'bcrypt-other' ELSE 'other' END AS kind, count(*) FROM oauth2_registered_client GROUP BY 1;
+SQL
+```
+  - Before: every user row has a cost (`$2a$`, `$2b$` or `$2y$`); a row with an empty cost is not bcrypt: stop and
+    check it, because it would no longer verify. Clients: only `noop` and `bcrypt10`, and zero `other`.
+  - After 24 h: users who logged in show cost 12; clients still show zero `bcrypt-other` (no client secret was
+    re-encoded at the user cost).
+- **Rollback:** revert the merge; cost-12 hashes keep verifying under the old encoder (the cost is part of each
+  hash).
+
 ## Configuration reference
 
 ### Environment variables
@@ -658,6 +701,7 @@ Common: Insufficient CPU/memory, nodeSelector mismatch, image not available for 
 | `GRAFANA_CLIENT_SECRET` | `homelab-auth-secrets` | Yes | Grafana OIDC client secret |
 | `HA_CLIENT_SECRET` | `homelab-auth-secrets` | Yes | Home Assistant OIDC client secret |
 | `DEVICE_SERVICE_CLIENT_SECRET` | `homelab-auth-secrets` | Yes | device-service OIDC client secret |
+| `APP_PASSWORD_BCRYPT_STRENGTH` | Config | No | bcrypt cost for user passwords, 10–16 (default 12); client secrets always use 10 |
 | `LITELLM_CLIENT_SECRET` | `homelab-auth-secrets` | Yes | LiteLLM OIDC client secret |
 | `CLAUDE_MCP_HUB_CLIENT_SECRET` | `homelab-auth-secrets` (`claude-mcp-hub-client-secret`) | No | `claude-mcp-hub` client secret, `{bcrypt}` cost 10; blank = client not seeded |
 | `CLAUDE_MCP_HUB_ALLOWED_USERS` | `homelab-auth-secrets` (`claude-mcp-hub-allowed-users`) | No | Usernames allowed to use `claude-mcp-hub`, comma-separated, exact spelling; empty = everyone rejected |
