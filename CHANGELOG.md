@@ -4,6 +4,7 @@
 
 ### Security
 
+- The unused `grafana` and `homeassistant` OIDC clients are removed (#154): no longer configured, and `GRAFANA_CLIENT_SECRET` / `HA_CLIENT_SECRET` are no longer read. The seeder never deletes rows, so the owner removes the stored rows once with the SQL in `DEPLOYMENT.md` § Runbooks "Remove the grafana and homeassistant client rows". Until then both ids stay reserved usernames.
 - Registered client ids are reserved as usernames (#143): creating or renaming a user to a configured or stored client id (ignoring case) answers `400`, and creating a device client whose id equals an existing username or a configured client id answers `409`. Read-only check queries in `DEPLOYMENT.md` § Runbooks "Check usernames against client ids".
 - Service scopes (`netmon:*`, `analytics:*`, `login-events:*`, `clients:admin`) are issued only through `client_credentials` (#143): `/oauth2/authorize` answers `error=invalid_scope`, and a token request of any other grant whose authorization holds one answers `400 invalid_grant`.
 - The unused `n8n` OIDC client is removed (the n8n community edition cannot use OIDC): no longer configured, `N8N_CLIENT_SECRET` no longer read, and Flyway V9 deletes its row, authorizations and consents (its row held a plaintext `{noop}` secret).

@@ -8,7 +8,7 @@ This document describes how external services, applications, and clients interac
 
 The auth-service exposes **three types of interfaces**:
 
-1. **OIDC Protocol Endpoints** — For OIDC-compatible clients (Grafana, Home Assistant, LiteLLM)
+1. **OIDC Protocol Endpoints** — For OIDC-compatible clients (furchert-ch, LiteLLM, device-service Swagger UI)
 2. **REST API** — For programmatic user management (admin operations)
 3. **JWKS Endpoint** — For service-to-service token validation
 
@@ -147,51 +147,11 @@ GET /connect/logout?id_token_hint=<id_token>&post_logout_redirect_uri=<registere
 
 ## 2. Client-Specific Integration Guides
 
-### Grafana
+### Grafana and Home Assistant
 
-Grafana uses the Generic OAuth provider. Add to `grafana.ini`:
-
-```ini
-[auth.generic_oauth]
-enabled = true
-name = Homelab SSO
-icon = signin
-client_id = grafana
-client_secret = ${GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET}
-scopes = openid profile email
-auth_url = https://auth.furchert.ch/oauth2/authorize
-token_url = https://auth.furchert.ch/oauth2/token
-api_url = https://auth.furchert.ch/userinfo
-use_pkce = true
-role_attribute_path = role == 'ADMIN' && 'Admin' || 'Viewer'
-```
-
-**Note:** Set `role_attribute_path` to map the `role` claim to Grafana roles. Adjust the expression based on your Grafana permission model.
-
-### Home Assistant
-
-In `configuration.yaml`:
-
-```yaml
-http:
-  use_x_forwarded_for: true
-  trusted_proxies:
-    - 10.0.0.0/8
-
-oidc:
-  discovery_url: https://auth.furchert.ch/.well-known/openid-configuration
-  client_id: homeassistant
-  client_secret: !secret ha_oidc_client_secret
-  scopes:
-    - openid
-    - profile
-    - email
-```
-
-Add to `secrets.yaml`:
-```yaml
-ha_oidc_client_secret: <plaintext-secret>
-```
+No OIDC clients: neither application is configured for OIDC login against this IdP. The former
+`grafana` and `homeassistant` client registrations were removed (#154); see `DEPLOYMENT.md`
+§ "Remove the grafana and homeassistant client rows".
 
 ### n8n
 
@@ -600,8 +560,8 @@ The REST API uses **Bearer token authentication** with JWT tokens obtained via O
 compared ignoring case and surrounding whitespace: every `app.oidc.clients[*].client-id`
 in `application.yaml` (also when that client is not seeded yet) and every client id
 stored in `oauth2_registered_client`, including IoT device clients (§8). Today this is
-`grafana`, `homeassistant`, `device-service`, `litellm`, `furchert-ch`,
-`data-service`, `claude-mcp-hub`, `claude-club-mcp` and every device client id
+`device-service`, `litellm`, `furchert-ch`, `data-service`, `claude-mcp-hub`,
+`claude-club-mcp` and every device client id
 (keep this list in step with `app.oidc.clients` in `application.yaml`).
 `POST /users` or a rename via `PUT /users/{id}` to a reserved name answers `400`
 (`"Username is reserved: <name>"`); updates without a rename are not affected.

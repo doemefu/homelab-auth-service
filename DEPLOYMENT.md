@@ -22,7 +22,7 @@ Comprehensive deployment and operational guidance for auth-service.
 |--------|------|---------|
 | `homelab-db-credentials` | `username`, `password` | Database |
 | `homelab-auth-rsa-keys` | `private.pem`, `public.pem` | JWT signing keys |
-| `homelab-auth-secrets` | Client secrets for Grafana, Home Assistant, device-service, LiteLLM; optional `claude-mcp-hub-client-secret`, `claude-mcp-hub-allowed-users`, `claude-club-mcp-client-secret`, `claude-club-mcp-allowed-users` | OIDC client auth |
+| `homelab-auth-secrets` | Client secrets for device-service, LiteLLM; optional `claude-mcp-hub-client-secret`, `claude-mcp-hub-allowed-users`, `claude-club-mcp-client-secret`, `claude-club-mcp-allowed-users` | OIDC client auth |
 | `sentry-dsn` | `dsn` | Error tracking (optional) |
 
 ### Cloudflare Tunnel
@@ -73,8 +73,6 @@ openssl genrsa -out private.pem 2048
 openssl rsa -in private.pem -pubout -out public.pem
 kubectl create secret generic homelab-auth-rsa-keys -n apps --from-file=private.pem --from-file=public.pem
 kubectl create secret generic homelab-auth-secrets -n apps \
-  --from-literal=grafana-client-secret='{bcrypt}<hash>' \
-  --from-literal=ha-client-secret='{bcrypt}<hash>' \
   --from-literal=device-service-client-secret='{bcrypt}<hash>' \
   --from-literal=litellm-client-secret-authservice='{bcrypt}<hash>'
 rm private.pem public.pem
@@ -230,11 +228,8 @@ Fix, per client (owner action; the plaintext the client application uses does no
 ```bash
 f=$(mktemp); printf 'x:%s\n' '<hash without the {bcrypt} prefix>' > "$f"; htpasswd -v "$f" x; rm -f "$f"
 ```
-2. Configured value: Grafana and Home Assistant keys are written verbatim by playbook 59 from the owner's encrypted
-   variables `auth_service_grafana_client_secret` / `auth_service_ha_client_secret`; change the variable and run
-   playbook 59 (owner). A direct `kubectl patch` of the key is reverted by the next playbook run. For
-   `device-service`, `litellm`, `furchert-ch` and `data-service` playbook 59 adds the `{noop}` prefix itself
-   and gives the consumer the same variable, so their switch needs the playbook change of homelab#154 first. The
+2. Configured value: for `device-service`, `litellm`, `furchert-ch` and `data-service` playbook 59 adds the `{noop}`
+   prefix itself and gives the consumer the same variable, so their switch needs the playbook change of homelab#154 first. The
    consumer keeps the plaintext in its own Secret key.
 3. Stored row (only when the WARN names it): trigger one login or token request of the client. Spring Authorization
    Server then re-encodes the row with a fresh `{bcrypt}` hash, and a wrong hash cannot be stored. Only for a client
@@ -259,9 +254,6 @@ actions; playbook runs and restarts need a go. Order:
    "Client secret not stored as {bcrypt}" step 1.
 2. Put the new values into the encrypted variables and run playbook 59 (it updates the Kubernetes Secrets; no pod
    restarts):
-   - `grafana`, `homeassistant`: the auth-service key (`auth_service_grafana_client_secret` /
-     `auth_service_ha_client_secret`) gets the `{bcrypt}` value. Their own configuration (set in the Grafana and Home
-     Assistant UIs) gets the plaintext in step 4, not now, because a UI change applies at once.
    - `device-service`, `litellm`, `furchert-ch`, `data-service`: one variable feeds both sides today (playbook 59
      adds `{noop}` for auth-service, the consumer gets the plaintext), so set it to the new plaintext. homelab#154
      splits them so that auth-service gets a `{bcrypt}` value.
@@ -275,13 +267,10 @@ UPDATE oauth2_registered_client SET client_secret = '<{bcrypt} value>' WHERE cli
 SQL
 # expected: UPDATE 1
 ```
-4. At once: restart the consumer so it reads the new plaintext (Flux apps: `kubectl -n apps delete pod -l app=<name>`),
-   or for Grafana and Home Assistant enter it in their UI. A consumer that kept retrying the old secret may get `429`
-   for up to 5 minutes ("Login throttle").
+4. At once: restart the consumer so it reads the new plaintext (Flux apps: `kubectl -n apps delete pod -l app=<name>`).
+   A consumer that kept retrying the old secret may get `429` for up to 5 minutes ("Login throttle").
 5. Verify with one login or token request of the client (and its logs show no `invalid_client`).
-6. Optional for `grafana`/`homeassistant`: restart auth-service (see "Restart service") so it reads the new configured
-   value and its start-up WARN for that client disappears. The four shared-variable clients keep a `{noop}` configured
-   value until homelab#154.
+6. The four shared-variable clients keep a `{noop}` configured value until homelab#154.
 
 ### Revoke a device client
 
@@ -318,6 +307,26 @@ kubectl -n apps exec postgresql-0 -c postgresql -- psql -U postgres -d homelabdb
   "SELECT client_id, client_kind, authorization_grant_types, client_authentication_methods, substring(client_secret from '^[{][^}]*[}]') AS secret_encoding FROM oauth2_registered_client ORDER BY client_kind, client_id"
 ```
 
+### Remove the grafana and homeassistant client rows
+
+Owner action, once, after the release without these clients is running (#154). The seeder never deletes rows, so the
+two rows (and any of their authorizations and consents) stay in the database until removed by hand. Run it only after
+the rollout: a pod of the previous release would seed the rows again at its next start. Only SSO rows are touched;
+re-running is a no-op:
+```bash
+kubectl -n apps exec -i postgresql-0 -c postgresql -- psql -U postgres -d homelabdb -v ON_ERROR_STOP=1 <<'SQL'
+BEGIN;
+DELETE FROM oauth2_authorization_consent WHERE registered_client_id IN
+  (SELECT id FROM oauth2_registered_client WHERE client_id IN ('grafana', 'homeassistant') AND client_kind = 'sso');
+DELETE FROM oauth2_authorization WHERE registered_client_id IN
+  (SELECT id FROM oauth2_registered_client WHERE client_id IN ('grafana', 'homeassistant') AND client_kind = 'sso');
+DELETE FROM oauth2_registered_client WHERE client_id IN ('grafana', 'homeassistant') AND client_kind = 'sso';
+COMMIT;
+SQL
+# expected: the last DELETE reports DELETE 2 (fewer if a row was never seeded)
+```
+Verify with "Inspect registered clients". Afterwards `grafana` and `homeassistant` are no longer reserved usernames.
+
 ### Check usernames against client ids
 
 Read-only; prints client ids and counts only, never usernames (#143). Names are compared like the service does:
@@ -328,7 +337,7 @@ kubectl -n apps exec postgresql-0 -c postgresql -- psql -U postgres -d homelabdb
   "SELECT c.client_id, count(*) FROM users u JOIN oauth2_registered_client c ON lower(regexp_replace(u.username, '^\s+|\s+\$', '', 'g')) = lower(btrim(c.client_id)) GROUP BY c.client_id"
 # Users whose name equals a configured client id (also covers clients not seeded yet):
 kubectl -n apps exec postgresql-0 -c postgresql -- psql -U postgres -d homelabdb -tAc \
-  "SELECT count(*) FROM users WHERE lower(regexp_replace(username, '^\s+|\s+\$', '', 'g')) IN ('grafana','homeassistant','device-service','litellm','furchert-ch','data-service','claude-mcp-hub','claude-club-mcp')"
+  "SELECT count(*) FROM users WHERE lower(regexp_replace(username, '^\s+|\s+\$', '', 'g')) IN ('device-service','litellm','furchert-ch','data-service','claude-mcp-hub','claude-club-mcp')"
 # Stored authorizations of a non-client_credentials grant that hold a service scope:
 kubectl -n apps exec postgresql-0 -c postgresql -- psql -U postgres -d homelabdb -tAc \
   "SELECT count(*) FROM oauth2_authorization WHERE authorization_grant_type <> 'client_credentials' AND EXISTS (SELECT 1 FROM unnest(string_to_array(authorized_scopes, ',')) s WHERE s LIKE 'netmon:%' OR s LIKE 'analytics:%' OR s LIKE 'login-events:%' OR s = 'clients:admin')"
@@ -655,8 +664,6 @@ Common: Insufficient CPU/memory, nodeSelector mismatch, image not available for 
 | `DB_USERNAME` | `homelab-db-credentials` | Yes | PostgreSQL username |
 | `DB_PASSWORD` | `homelab-db-credentials` | Yes | PostgreSQL password |
 | `DB_URL` | Config | No | JDBC URL (default: `jdbc:postgresql://postgresql.apps.svc.cluster.local:5432/homelabdb`) |
-| `GRAFANA_CLIENT_SECRET` | `homelab-auth-secrets` | Yes | Grafana OIDC client secret |
-| `HA_CLIENT_SECRET` | `homelab-auth-secrets` | Yes | Home Assistant OIDC client secret |
 | `DEVICE_SERVICE_CLIENT_SECRET` | `homelab-auth-secrets` | Yes | device-service OIDC client secret |
 | `LITELLM_CLIENT_SECRET` | `homelab-auth-secrets` | Yes | LiteLLM OIDC client secret |
 | `CLAUDE_MCP_HUB_CLIENT_SECRET` | `homelab-auth-secrets` (`claude-mcp-hub-client-secret`) | No | `claude-mcp-hub` client secret, `{bcrypt}` cost 10; blank = client not seeded |

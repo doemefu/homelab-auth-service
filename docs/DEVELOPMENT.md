@@ -167,8 +167,6 @@ export DB_PASSWORD=homelab
 export APP_OIDC_ISSUER=http://localhost:8080
 
 # OIDC client secrets (for local testing)
-export GRAFANA_CLIENT_SECRET="{noop}local-dev-secret"
-export HA_CLIENT_SECRET="{noop}local-dev-secret"
 export DEVICE_SERVICE_CLIENT_SECRET="{noop}local-dev-secret"
 export LITELLM_CLIENT_SECRET="{noop}local-dev-secret"
 ```
@@ -611,8 +609,6 @@ The `{noop}` examples are local-only; production uses `{bcrypt}` hashes.
 |----------|---------|---------|
 | `DB_USERNAME` | PostgreSQL username | `homelab` |
 | `DB_PASSWORD` | PostgreSQL password | `homelab` |
-| `GRAFANA_CLIENT_SECRET` | Grafana OIDC client secret | `{noop}secret` |
-| `HA_CLIENT_SECRET` | Home Assistant OIDC client secret | `{noop}secret` |
 | `DEVICE_SERVICE_CLIENT_SECRET` | device-service OIDC client secret | `{noop}secret` |
 | `LITELLM_CLIENT_SECRET` | LiteLLM OIDC client secret | `{noop}secret` |
 
