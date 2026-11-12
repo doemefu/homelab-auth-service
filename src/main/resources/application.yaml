@@ -165,6 +165,11 @@ app:
     client-id: { max-failures: 50, window: 5m, lock-duration: 5m }
     known-good-ttl: 30d
     max-entries: 30000
+  # bcrypt cost for user passwords (#150); client secrets stay at cost 10. A stored user hash with a lower
+  # cost is re-encoded at the user's next successful login. Measure on the slowest node before raising it
+  # (DEPLOYMENT.md "Password hashing cost").
+  password:
+    bcrypt-strength: ${APP_PASSWORD_BCRYPT_STRENGTH:12}
 
 management:
   endpoints:

@@ -1,5 +1,6 @@
 package ch.furchert.homelab.auth.service;
 
+import ch.furchert.homelab.auth.config.ClientSecretEncoder;
 import ch.furchert.homelab.auth.config.OidcClientProperties;
 import ch.furchert.homelab.auth.dto.DeviceClientCreatedResponse;
 import ch.furchert.homelab.auth.exception.ResourceConflictException;
@@ -47,7 +48,7 @@ class DeviceClientServiceTest {
         properties = new OidcClientProperties();
         properties.getDeviceClients().setAccessTokenTtlSeconds(3600);
         properties.getDeviceClients().setAllowedScopes(List.of("mqtt:pub", "mqtt:sub"));
-        service = new DeviceClientService(registeredClientRepository, jdbcTemplate, passwordEncoder,
+        service = new DeviceClientService(registeredClientRepository, jdbcTemplate, new ClientSecretEncoder(passwordEncoder),
                 clientKindLookup, properties, reservedClientIds);
     }
 

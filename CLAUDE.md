@@ -58,7 +58,7 @@ Agents come from the `homelab-workflow` plugin: `homelab-workflow:<role>` (`arch
 - Flyway for all DB migrations (`spring.flyway.table=flyway_schema_history_auth`)
 - `spring.jpa.hibernate.ddl-auto=validate`
 - Package structure: `config/`, `controller/`, `dto/`, `entity/`, `repository/`, `service/`, `security/`, `exception/`
-- BCrypt for password hashing (default strength)
+- BCrypt: user passwords at `app.password.bcrypt-strength` (default 12, the only `PasswordEncoder` bean), OAuth client secrets at cost 10 (`ClientSecretEncoder`); never share one encoder for both (#150)
 - Roles: `USER`, `ADMIN` — stored as VARCHAR on users table
 
 ## Testing

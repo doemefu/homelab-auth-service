@@ -124,7 +124,7 @@ class UserControllerTest {
                         .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                new CreateUserRequest("testuser", "test@example.com", "password123", Role.USER))))
+                                new CreateUserRequest("testuser", "test@example.com", "correct-horse-battery-staple", Role.USER))))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.username").value("testuser"));
     }
@@ -135,7 +135,7 @@ class UserControllerTest {
                         .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_USER")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                new CreateUserRequest("testuser", "test@example.com", "password123", Role.USER))))
+                                new CreateUserRequest("testuser", "test@example.com", "correct-horse-battery-staple", Role.USER))))
                 .andExpect(status().isForbidden());
     }
 
@@ -144,7 +144,7 @@ class UserControllerTest {
         mockMvc.perform(post("/api/v1/users")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                new CreateUserRequest("testuser", "test@example.com", "password123", Role.USER))))
+                                new CreateUserRequest("testuser", "test@example.com", "correct-horse-battery-staple", Role.USER))))
                 .andExpect(status().isUnauthorized());
     }
 
@@ -153,7 +153,7 @@ class UserControllerTest {
         mockMvc.perform(post("/api/v1/users")
                         .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN")))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"username\":\"u\",\"email\":\"not-an-email\",\"password\":\"password123\"}"))
+                        .content("{\"username\":\"u\",\"email\":\"not-an-email\",\"password\":\"correct-horse-battery-staple\"}"))
                 .andExpect(status().isBadRequest());
     }
 
