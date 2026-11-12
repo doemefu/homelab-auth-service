@@ -4,6 +4,8 @@
 
 ### Security
 
+- Password policy for passwords set through the API (#150): at least 15 characters, at most 72 bytes, not on a bundled list of common passwords, not the username or e-mail address. A rejection answers `400` and names the failed rule under the field (`INTERFACES.md` §4 "Password policy"). Existing passwords keep working until they are changed.
+- User passwords are hashed with bcrypt cost 12 (`APP_PASSWORD_BCRYPT_STRENGTH`); an older hash is re-encoded at the next successful login. OAuth client secrets keep cost 10 on their own encoder, so client authentication never rewrites them at the user cost. The first-admin bootstrap runbook no longer puts the password on the command line.
 - Registered client ids are reserved as usernames (#143): creating or renaming a user to a configured or stored client id (ignoring case) answers `400`, and creating a device client whose id equals an existing username or a configured client id answers `409`. Read-only check queries in `DEPLOYMENT.md` § Runbooks "Check usernames against client ids".
 - Service scopes (`netmon:*`, `analytics:*`, `login-events:*`, `clients:admin`) are issued only through `client_credentials` (#143): `/oauth2/authorize` answers `error=invalid_scope`, and a token request of any other grant whose authorization holds one answers `400 invalid_grant`.
 - The unused `n8n` OIDC client is removed (the n8n community edition cannot use OIDC): no longer configured, `N8N_CLIENT_SECRET` no longer read, and Flyway V9 deletes its row, authorizations and consents (its row held a plaintext `{noop}` secret).

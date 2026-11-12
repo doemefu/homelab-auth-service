@@ -13,6 +13,7 @@ import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -48,10 +49,9 @@ public class CustomUserDetailsService implements UserDetailsService, UserDetails
     @Transactional
     @NonNull
     public UserDetails updatePassword(@NonNull UserDetails user, @Nullable String newPassword) {
-        userRepository.findByUsername(user.getUsername()).ifPresent(entity -> {
-            entity.setPasswordHash(newPassword);
-            userRepository.save(entity);
-        });
+        // user.getPassword() is the hash this login verified. If the password was reset meanwhile, nothing is
+        // written and the newer value stays.
+        userRepository.replacePasswordHash(user.getUsername(), user.getPassword(), newPassword, Instant.now());
         return User.withUserDetails(user).password(newPassword).build();
     }
 }

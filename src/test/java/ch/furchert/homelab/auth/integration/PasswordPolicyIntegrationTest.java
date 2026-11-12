@@ -4,6 +4,7 @@ import ch.furchert.homelab.auth.AbstractIntegrationTest;
 import ch.furchert.homelab.auth.entity.Role;
 import ch.furchert.homelab.auth.entity.User;
 import ch.furchert.homelab.auth.repository.UserRepository;
+import ch.furchert.homelab.auth.security.CustomUserDetailsService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -11,6 +12,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
@@ -42,6 +44,8 @@ class PasswordPolicyIntegrationTest extends AbstractIntegrationTest {
     UserRepository userRepository;
     @Autowired
     PasswordEncoder passwordEncoder;
+    @Autowired
+    CustomUserDetailsService userDetailsService;
 
     // --- API: the failed rule is named under the request field ---
 
@@ -119,6 +123,20 @@ class PasswordPolicyIntegrationTest extends AbstractIntegrationTest {
         String upgraded = storedHash(username);
         assertThat(upgraded).matches("\\{bcrypt}\\$2a\\$12\\$.{53}");
         assertThat(passwordEncoder.matches(password, upgraded)).isTrue();
+    }
+
+    @Test
+    void reEncode_neverOverwritesAPasswordChangedSinceTheLoginReadIt() {
+        String password = "a-race-test-passphrase";
+        String legacy = "{bcrypt}" + new BCryptPasswordEncoder(10).encode(password);
+        saveUser("upgrade-race-user", legacy);
+        UserDetails readByLogin = userDetailsService.loadUserByUsername("upgrade-race-user");
+        String resetMeanwhile = passwordEncoder.encode("a-newer-reset-passphrase");
+        saveUser("upgrade-race-user", resetMeanwhile);
+
+        userDetailsService.updatePassword(readByLogin, passwordEncoder.encode(password));
+
+        assertThat(storedHash("upgrade-race-user")).isEqualTo(resetMeanwhile);
     }
 
     private void login(String username, String password, String expectedRedirect) throws Exception {

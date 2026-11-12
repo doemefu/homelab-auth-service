@@ -594,6 +594,22 @@ The REST API uses **Bearer token authentication** with JWT tokens obtained via O
 | All `/clients` endpoints | `ADMIN` **or** `clients:admin` scope | IoT device client lifecycle — see §8 |
 | `GET /login-events` | `login-events:read` scope only (ADMIN gets 403) | Login-event outbox for data-service — see §2 "data-service" |
 
+**Password policy (#150).** `password` on `POST /users` and `newPassword` on
+`POST /users/{id}/reset-password` must have at least 15 characters (Unicode code points) and at most 72 bytes in
+UTF-8. They must not be on the bundled list of common passwords, and must not equal the username, the e-mail
+address, its local part or its domain. The list and account comparisons ignore case and surrounding whitespace.
+There are no composition rules and no expiry. A rejection answers `400` and names the failed rule under the field:
+
+```json
+{ "status": 400, "error": "password does not meet the policy", "timestamp": "…",
+  "details": { "newPassword": "too common: it appears in lists of breached passwords" } }
+```
+
+The rule texts are `too short: use at least 15 characters`, `too long: use at most 72 bytes (UTF-8)`,
+`too common: it appears in lists of breached passwords` and `must not be the username or the e-mail address`.
+A value outside 15–72 characters is already refused by request validation (`"error": "Validation failed"`, the
+field under `details`). The policy applies when a password is set; existing passwords keep working.
+
 `GET /users?page=0&size=50` lists users ordered by `id` ascending (`page` zero-based, `size` 1–100, default 50; out-of-range values return `400`). Response: `{ "users": [<UserResponse>…], "page": 0, "size": 50, "totalElements": 7 }` — each entry has the same shape as `GET /users/{id}` (`id`, `username`, `email`, `role`, `status`, `createdAt`, `updatedAt`). The `clients:admin` scope does **not** grant access; a user token with role `ADMIN` is required (furchert-ch `/dashboard/auth` calls it server-side with the signed-in admin's access token).
 
 **Reserved usernames (#143).** Every registered client id is reserved as a username,
