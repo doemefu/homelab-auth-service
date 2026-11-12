@@ -34,8 +34,9 @@ jobs:
       - name: Run tests
         run: ./mvnw verify
 
-  # Allowlist: every `uses:` must be a local action, `owner/repo[/path]@<40-hex SHA>`,
-  # or `docker://…@sha256:<64-hex>`. Comment lines never match the first grep.
+  # Allowlist over the parsed YAML (.github/scripts/check_action_pins.py, same script as
+  # device-service): every `uses:` must be a local action, `owner/repo[/path]@<40-hex SHA>`,
+  # or `docker://…@sha256:<64-hex>`. Comments can neither hide nor satisfy a reference.
   pinned-actions:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -43,11 +44,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Every uses is pinned by full SHA or digest
+      - name: Self-test the pin check
+        run: python3 .github/scripts/check_action_pins.py --self-test
+      - name: Require full-SHA or digest pins
         run: |
-          bad=$(grep -rhnE '^\s*-?\s*\{?\s*uses:' .github/workflows/ \
-            | grep -vE "uses:\s+[\"']?(\./[^ \"']*|[^ @\"']+@[0-9a-f]{40}|docker://[^ \"']+@sha256:[0-9a-f]{64})[\"']?\}?(\s+#.*)?$") \
-            && { echo "$bad"; echo "unpinned uses:"; exit 1; } || true
+          set -euo pipefail
+          shopt -s nullglob
+          python3 .github/scripts/check_action_pins.py .github/workflows/*.yml .github/workflows/*.yaml
 
   actionlint:
     runs-on: ubuntu-latest

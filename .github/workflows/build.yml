@@ -33,6 +33,8 @@ jobs:
         run: ./mvnw verify
 
   build-and-push:
+    # Defence in depth: only main may push images (the trigger already is push to main only).
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     # Guards against the QEMU arm64 hang class (furchert-ch#41). Recent whole runs take 2-11 min;
     # keep the job timeout >= 5 min above the build step's own timeout below.

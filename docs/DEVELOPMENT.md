@@ -589,7 +589,7 @@ After the pod starts successfully, remove these env vars.
 The project uses GitHub Actions for CI/CD:
 
 - **Workflows:** `.github/workflows/ci.yml` (branch pushes and PRs to `main`), `.github/workflows/build.yml` (pushes to `main` only), `.github/workflows/codeql.yml`
-- **PR checks (`ci.yml`):** `test` (below), `pinned-actions` (every `uses:` is pinned to a full commit SHA or an image digest), `actionlint` (pinned, checksum-verified binary), and `image` (amd64 image build, never pushed)
+- **PR checks (`ci.yml`):** `test` (below), `pinned-actions` (`.github/scripts/check_action_pins.py`: every `uses:` in the parsed workflow YAML is pinned to a full commit SHA or an image digest; the script self-tests first), `actionlint` (pinned, checksum-verified binary), and `image` (amd64 image build, never pushed)
 - **Pinning:** actions are pinned by full SHA with a `# vX.Y.Z` comment, and the Dockerfile base images and the QEMU/BuildKit images in the workflows by digest. Dependabot bumps actions (7-day cooldown) and the Dockerfile; the QEMU/BuildKit images in `with:` are bumped by hand
 - **Test Job:** Runs `./mvnw verify` — equivalent to `./mvnw test` in this repo (no `maven-failsafe-plugin` bound); executes unit tests, `@WebMvcTest` slices, and Testcontainers-backed classes named `*Test.java` under `integration/`. Classes suffixed `*IT.java` would not be executed, so none exist — see #85 and "Running Tests" above.
 - **Build Job:** Multi-arch Docker image (`linux/amd64` + `linux/arm64`) pushed to `ghcr.io/doemefu/homelab-auth-service`
