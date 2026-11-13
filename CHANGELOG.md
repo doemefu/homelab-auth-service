@@ -4,6 +4,7 @@
 
 ### Security
 
+- The admin API (`/api/v1/**`) accepts only access tokens issued to `furchert-ch`, `device-service` or `data-service` (`aud` allowlist, #153); tokens of other clients answer `401`. `/userinfo` is unchanged. Interim step until #101.
 - CI supply-chain hardening (doemefu/homelab-device-service#126): every GitHub Action is pinned to a full commit SHA, the Dockerfile base images and the QEMU/BuildKit images used by the image build are pinned by digest, and new PR checks enforce the pins (`pinned-actions`), lint the workflows (`actionlint`) and build the image without pushing it (`image`). Dependabot waits 7 days before proposing a new action release.
 - Registered client ids are reserved as usernames (#143): creating or renaming a user to a configured or stored client id (ignoring case) answers `400`, and creating a device client whose id equals an existing username or a configured client id answers `409`. Read-only check queries in `DEPLOYMENT.md` § Runbooks "Check usernames against client ids".
 - Service scopes (`netmon:*`, `analytics:*`, `login-events:*`, `clients:admin`) are issued only through `client_credentials` (#143): `/oauth2/authorize` answers `error=invalid_scope`, and a token request of any other grant whose authorization holds one answers `400 invalid_grant`.
