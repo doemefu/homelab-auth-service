@@ -142,7 +142,11 @@ class McpClubTokenGateTest extends AbstractIntegrationTest {
         mockMvc.perform(get("/userinfo").header("Authorization", "Bearer " + t.accessToken()))
                 .andExpect(result -> assertThat(result.getResponse().getStatus()).isNotEqualTo(200));
         // Positive control: same claims re-signed with typ JWT reach the API (own record 200, admin API 403).
-        String control = flow.resign(t.accessToken(), "JWT");
+        // typ JWT alone is not enough: the admin API also accepts only first-party audiences (#153).
+        mockMvc.perform(get("/api/v1/users/{id}", id).header("Authorization", "Bearer "
+                        + flow.resign(t.accessToken(), "JWT")))
+                .andExpect(status().isUnauthorized());
+        String control = flow.resign(t.accessToken(), "JWT", "furchert-ch");
         mockMvc.perform(get("/api/v1/users/{id}", id).header("Authorization", "Bearer " + control))
                 .andExpect(status().isOk());
         mockMvc.perform(get("/api/v1/clients").header("Authorization", "Bearer " + control))

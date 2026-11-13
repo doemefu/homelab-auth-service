@@ -594,6 +594,7 @@ The REST API uses **Bearer token authentication** with JWT tokens obtained via O
 
 - **Header:** `Authorization: Bearer <token>`
 - **Token Type:** Access token from OIDC token endpoint. **ID tokens are rejected** with `401`, recognised by their `azp` claim: Spring Authorization Server sets `azp` on every ID token and on no access token. ID tokens are signed with the same key and carry `role` too, so without this check an ID token, which every OIDC client receives, would act as an access token for its 30 min lifetime.
+- **Audience (#153):** only access tokens whose `aud` contains `furchert-ch`, `device-service` or `data-service` are accepted; any other token answers `401`. Spring Authorization Server sets `aud` to the client that requested the token, so an access token issued to another relying party (for example LiteLLM) is refused here even when it carries `role: ADMIN`. A new caller of this API needs its client id added to `ApiAudienceValidator` first. This is an interim rule until resource-scoped audiences exist (#101). It applies to `/api/v1/**` only; `/userinfo` keeps accepting every client's access token.
 
 ### Authorization Rules
 

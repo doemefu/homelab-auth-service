@@ -1,5 +1,6 @@
 package ch.furchert.homelab.auth.config;
 
+import ch.furchert.homelab.auth.security.ApiAudienceValidator;
 import ch.furchert.homelab.auth.security.LoginThrottle;
 import ch.furchert.homelab.auth.security.LoginThrottleFilter;
 import jakarta.servlet.DispatcherType;
@@ -17,6 +18,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.DelegatingPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
@@ -53,7 +55,7 @@ public class SecurityConfig {
      */
     @Bean
     @Order(2)
-    public SecurityFilterChain apiSecurityFilterChain(HttpSecurity http) {
+    public SecurityFilterChain apiSecurityFilterChain(HttpSecurity http, JwtDecoder jwtDecoder) {
         http
                 .securityMatcher("/api/v1/**")
                 .authorizeHttpRequests(auth -> auth
@@ -73,7 +75,10 @@ public class SecurityConfig {
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 )
                 .oauth2ResourceServer(rs -> rs
-                        .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter()))
+                        // The JwtDecoder bean plus the first-party audience allowlist (#153), for this chain
+                        // only: the bean also authenticates /userinfo, which every relying party calls.
+                        .jwt(jwt -> jwt.decoder(ApiAudienceValidator.restrict(jwtDecoder))
+                                .jwtAuthenticationConverter(jwtAuthenticationConverter()))
                 )
                 .exceptionHandling(ex -> ex
                         // HttpStatusEntryPoint calls response.setStatus(), not sendError() — it

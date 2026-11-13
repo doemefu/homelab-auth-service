@@ -82,7 +82,15 @@ final class AuthCodeFlow {
 
     /** Same claims, re-signed with the service's real key and the given typ header (G2 positive control). */
     String resign(String jwt, String typ) {
-        Map<String, Object> claims = payload(jwt);
+        return resign(jwt, typ, null);
+    }
+
+    /** As {@link #resign(String, String)}, with {@code aud} replaced when {@code audience} is not null. */
+    String resign(String jwt, String typ, String audience) {
+        Map<String, Object> claims = new java.util.LinkedHashMap<>(payload(jwt));
+        if (audience != null) {
+            claims.put("aud", java.util.List.of(audience));
+        }
         JwtClaimsSet.Builder b = JwtClaimsSet.builder();
         claims.forEach((k, v) -> b.claim(k, switch (k) {
             case "iat", "exp", "nbf" -> Instant.ofEpochSecond(((Number) v).longValue());
