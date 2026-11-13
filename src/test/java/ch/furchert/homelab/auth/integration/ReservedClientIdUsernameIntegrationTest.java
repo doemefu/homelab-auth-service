@@ -55,7 +55,8 @@ class ReservedClientIdUsernameIntegrationTest extends AbstractIntegrationTest {
     void creatingAUserNamedLikeAStoredClientIsRejected() throws Exception {
         try {
             createUser("furchert-ch").andExpect(status().isBadRequest())
-                    .andExpect(jsonPath("$.error").value("Username is reserved: furchert-ch"));
+                    .andExpect(jsonPath("$.error").value("username not available"))
+                    .andExpect(jsonPath("$.details.username").value("not available"));
             createUser("HomeAssistant").andExpect(status().isBadRequest());
             assertThat(userRepository.findByUsername("furchert-ch")).isEmpty();
             assertThat(userRepository.findByUsername("HomeAssistant")).isEmpty();
@@ -93,7 +94,7 @@ class ReservedClientIdUsernameIntegrationTest extends AbstractIntegrationTest {
 
             asAdmin(put("/api/v1/users/" + id), "{\"username\":\"Device-Service\"}")
                     .andExpect(status().isBadRequest())
-                    .andExpect(jsonPath("$.error").value("Username is reserved: Device-Service"));
+                    .andExpect(jsonPath("$.error").value("username not available"));
 
             assertThat(userRepository.findById(id).orElseThrow().getUsername()).isEqualTo(name);
         } finally {
@@ -108,7 +109,9 @@ class ReservedClientIdUsernameIntegrationTest extends AbstractIntegrationTest {
             createUser(name).andExpect(status().isCreated());
 
             asAdmin(post("/api/v1/clients"), "{\"clientId\":\"" + name + "\"}")
-                    .andExpect(status().isConflict());
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.error").value("client id not available"))
+                    .andExpect(jsonPath("$.details.clientId").value("not available"));
             Integer rows = jdbc.queryForObject(
                     "SELECT COUNT(*) FROM oauth2_registered_client WHERE client_id = ?", Integer.class, name);
             assertThat(rows).isZero();

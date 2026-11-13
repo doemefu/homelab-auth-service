@@ -615,7 +615,18 @@ stored in `oauth2_registered_client`, including IoT device clients (§8). Today 
 `data-service`, `claude-mcp-hub`, `claude-club-mcp` and every device client id
 (keep this list in step with `app.oidc.clients` in `application.yaml`).
 `POST /users` or a rename via `PUT /users/{id}` to a reserved name answers `400`
-(`"Username is reserved: <name>"`); updates without a rename are not affected.
+(`"error": "username not available"`, `"details": {"username": "not available"}`); updates without a rename
+are not affected.
+
+**Error messages (#151).** Admin API errors never echo request input: `error` is a constant text and `details`
+(when present) maps the request field to a constant text, for example `400` `"username already in use"` /
+`{"username": "already in use"}`, `"email already in use"` / `{"email": "already in use"}`,
+`"unsupported status value"` / `{"status": "unsupported value"}`, `"Current password is required"` or
+`"Current password is incorrect"` / `{"currentPassword": "required" | "incorrect"}`, `"page must be >= 0"`,
+`"size must be between 1 and 100"`; `404` `"unknown user"` and `"unknown client"`; `409` `"client already exists"`
+/ `{"clientId": "already exists"}` and `"client id not available"` / `{"clientId": "not available"}`. Any other
+`400` from a rejected argument answers `"invalid request"`. Request-validation errors keep
+`"Validation failed"` with the field messages under `details`.
 
 Deleting a user, setting the user's status to `INACTIVE`, or changing the user's role revokes the user's authorizations and consents; reactivation restores nothing. After a role change the user's refresh tokens no longer work. A demotion applies to every token issued after it; a promotion applies after the user signs out (`/connect/logout`) and in again. Access tokens issued before the change stay valid until they expire (the client's access-token TTL). A request that sets the current role again revokes nothing.
 

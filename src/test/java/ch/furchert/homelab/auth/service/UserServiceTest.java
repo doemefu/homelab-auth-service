@@ -89,7 +89,7 @@ class UserServiceTest {
 
         assertThatThrownBy(() -> userService.createUser(request))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Username already taken");
+                .hasMessage("username already in use");
     }
 
     @Test
@@ -100,7 +100,7 @@ class UserServiceTest {
 
         assertThatThrownBy(() -> userService.createUser(request))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Email already registered");
+                .hasMessage("email already in use");
     }
 
     @Test
@@ -156,7 +156,7 @@ class UserServiceTest {
         when(userRepository.findById(1L)).thenReturn(Optional.of(existingUser));
 
         assertThatThrownBy(() -> userService.getUser(1L, "otheruser", false))
-                .isInstanceOf(ResourceNotFoundException.class).hasMessage("User not found: 1");
+                .isInstanceOf(ResourceNotFoundException.class).hasMessage("unknown user");
     }
 
     @Test
@@ -165,7 +165,7 @@ class UserServiceTest {
 
         assertThatThrownBy(() -> userService.resetPassword(1L,
                 new ResetPasswordRequest("whatever", "new-password-123"), "otheruser", false))
-                .isInstanceOf(ResourceNotFoundException.class).hasMessage("User not found: 1");
+                .isInstanceOf(ResourceNotFoundException.class).hasMessage("unknown user");
         verify(userRepository, never()).save(any());
         verifyNoInteractions(jdbcTemplate);
     }
@@ -364,7 +364,7 @@ class UserServiceTest {
 
         assertThatThrownBy(() -> userService.createUser(request))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Username is reserved");
+                .hasMessage("username not available");
         verify(reservedClientIds).lockIdentityNamespace();
         verify(userRepository, never()).save(any(User.class));
     }
@@ -377,7 +377,7 @@ class UserServiceTest {
 
         assertThatThrownBy(() -> userService.updateUser(1L, request))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Username is reserved");
+                .hasMessage("username not available");
         verify(reservedClientIds).lockIdentityNamespace();
         verify(userRepository, never()).save(any(User.class));
         verifyNoInteractions(jdbcTemplate);
