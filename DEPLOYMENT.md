@@ -307,25 +307,17 @@ kubectl -n apps exec postgresql-0 -c postgresql -- psql -U postgres -d homelabdb
   "SELECT client_id, client_kind, authorization_grant_types, client_authentication_methods, substring(client_secret from '^[{][^}]*[}]') AS secret_encoding FROM oauth2_registered_client ORDER BY client_kind, client_id"
 ```
 
-### Remove the grafana and homeassistant client rows
+### Removed grafana and homeassistant clients (#154)
 
-Owner action, once, after the release without these clients is running (#154). The seeder never deletes rows, so the
-two rows (and any of their authorizations and consents) stay in the database until removed by hand. Run it only after
-the rollout: a pod of the previous release would seed the rows again at its next start. Only SSO rows are touched;
-re-running is a no-op:
+Flyway V11 deletes both SSO client rows with their authorizations and consents when the release starts (the seeder
+never deletes rows; same pattern as V9 for n8n). Nothing to run by hand. If a pod of the previous release restarts
+after V11 ran, its seeder adds the rows again; then roll out again or run V11's statements by hand. Read-only check
+after the rollout (expected `0`):
 ```bash
-kubectl -n apps exec -i postgresql-0 -c postgresql -- psql -U postgres -d homelabdb -v ON_ERROR_STOP=1 <<'SQL'
-BEGIN;
-DELETE FROM oauth2_authorization_consent WHERE registered_client_id IN
-  (SELECT id FROM oauth2_registered_client WHERE client_id IN ('grafana', 'homeassistant') AND client_kind = 'sso');
-DELETE FROM oauth2_authorization WHERE registered_client_id IN
-  (SELECT id FROM oauth2_registered_client WHERE client_id IN ('grafana', 'homeassistant') AND client_kind = 'sso');
-DELETE FROM oauth2_registered_client WHERE client_id IN ('grafana', 'homeassistant') AND client_kind = 'sso';
-COMMIT;
-SQL
-# expected: the last DELETE reports DELETE 2 (fewer if a row was never seeded)
+kubectl -n apps exec postgresql-0 -c postgresql -- psql -U postgres -d homelabdb -tAc \
+  "SELECT count(*) FROM oauth2_registered_client WHERE client_id IN ('grafana', 'homeassistant')"
 ```
-Verify with "Inspect registered clients". Afterwards `grafana` and `homeassistant` are no longer reserved usernames.
+Afterwards `grafana` and `homeassistant` are no longer reserved usernames.
 
 ### Check usernames against client ids
 

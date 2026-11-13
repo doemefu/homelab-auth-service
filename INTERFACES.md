@@ -162,7 +162,7 @@ GET /connect/logout?id_token_hint=<id_token>&post_logout_redirect_uri=<registere
 
 No OIDC clients: neither application is configured for OIDC login against this IdP. The former
 `grafana` and `homeassistant` client registrations were removed (#154); see `DEPLOYMENT.md`
-§ "Remove the grafana and homeassistant client rows".
+§ "Removed grafana and homeassistant clients" (Flyway V11 deletes the stored rows).
 
 ### n8n
 
