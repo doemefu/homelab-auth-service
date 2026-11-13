@@ -7,13 +7,16 @@ import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.proc.SecurityContext;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -55,5 +58,22 @@ class IdTokenBearerRejectionTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk());
         mockMvc.perform(get("/api/v1/users").header("Authorization", "Bearer " + body.get("id_token").asString()))
                 .andExpect(status().isUnauthorized());
+
+        // Paths open to any authenticated caller (own profile, own password reset) must refuse the ID
+        // token as well: the rejection sits in the bearer decoder, not in a role rule (furchert-ch#199).
+        long id = userRepository.findByUsername("idtokenadmin").orElseThrow().getId();
+        mockMvc.perform(get("/api/v1/users/" + id)
+                        .header("Authorization", "Bearer " + body.get("access_token").asString()))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/users/" + id)
+                        .header("Authorization", "Bearer " + body.get("id_token").asString()))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/v1/users/" + id + "/reset-password")
+                        .header("Authorization", "Bearer " + body.get("id_token").asString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"newPassword\":\"" + "y".repeat(24) + "\"}"))
+                .andExpect(status().isUnauthorized());
+        assertThat(passwordEncoder.matches(secret,
+                userRepository.findByUsername("idtokenadmin").orElseThrow().getPasswordHash())).isTrue();
     }
 }
