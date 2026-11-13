@@ -5,8 +5,9 @@ import java.util.Map;
 /**
  * A request value that passed bean validation but breaks a service-side rule. Answered as {@code 400} with a
  * constant message and {@code details} keyed by the request field, so clients can show it next to that field.
+ * It extends {@link IllegalArgumentException}, so callers that catch that type keep working.
  */
-public class InvalidInputException extends RuntimeException {
+public class InvalidInputException extends IllegalArgumentException {
 
     private final Map<String, String> details;
 
