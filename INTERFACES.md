@@ -142,6 +142,17 @@ GET /connect/logout?id_token_hint=<id_token>&post_logout_redirect_uri=<registere
   forced-logout link.
 - RPs whose own session outlives ~7 days (e.g. furchert-ch's 30-day sliding Auth.js
   session) should expect the `/login?logout` landing in that case, not an error page.
+- **ID tokens are never valid bearer tokens.** `id_token_hint` at this endpoint is the
+  only use of an ID token that this IdP accepts. RPs may therefore pass the ID token in the
+  logout redirect URL: furchert-ch does this, and the hint then also shows up in browser
+  history and IdP logs (furchert-ch `DEPLOYMENT.md` § "Federated logout — id_token exposure
+  (#79)"). That is safe only while every resource server refuses ID tokens.
+  - `/api/v1/**` here answers `401` for any token with an `azp` claim (§4 "Authentication").
+  - Every other resource server that trusts this IdP must do the same (§3 "Reject ID tokens").
+  - Fleet invariant: doemefu/furchert-ch#199. device-service enforces it since
+    doemefu/homelab-device-service#115.
+  - Guard tests here: `IdTokenRejectingValidatorTest`, `JwtDecoderIdTokenTest`,
+    `IdTokenBearerRejectionTest`.
 
 ---
 

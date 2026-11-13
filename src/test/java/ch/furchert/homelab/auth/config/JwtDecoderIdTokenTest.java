@@ -6,6 +6,8 @@ import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.proc.SecurityContext;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
@@ -65,6 +67,24 @@ class JwtDecoderIdTokenTest {
     void rejectsAnIdTokenWithTheSameSignatureAndRole() {
         Instant now = Instant.now();
         String token = sign(base(now).claim("azp", "furchert-ch").claim("sid", "s").claim("auth_time", now.getEpochSecond()));
+        assertThatThrownBy(() -> decoder.decode(token)).isInstanceOf(JwtValidationException.class)
+                .hasMessageContaining("ID tokens are not accepted");
+    }
+
+    /**
+     * Fleet invariant fixture (doemefu/furchert-ch#199): the full ID-token shape a relying party receives,
+     * at its real 30 minute lifetime, with no {@code typ} header, issued to a client other than furchert-ch.
+     * Only the {@code azp} gate can reject it: signature, issuer and time are all valid.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"litellm", "device-service"})
+    void rejectsAnIdTokenIssuedToAnyOidcClient(String clientId) {
+        Instant now = Instant.now();
+        String token = sign(JwtClaimsSet.builder().issuer("https://auth.test").subject("admin")
+                .audience(List.of(clientId)).issuedAt(now).expiresAt(now.plusSeconds(1800))
+                .claim("azp", clientId).claim("sid", "s").claim("auth_time", now.getEpochSecond())
+                .claim("nonce", "n").claim("name", "admin").claim("email", "admin@example.test")
+                .claim("role", "ADMIN"));
         assertThatThrownBy(() -> decoder.decode(token)).isInstanceOf(JwtValidationException.class)
                 .hasMessageContaining("ID tokens are not accepted");
     }
