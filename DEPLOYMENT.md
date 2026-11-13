@@ -657,14 +657,16 @@ Common: Insufficient CPU/memory, nodeSelector mismatch, image not available for 
   not on the bundled list of common passwords (`src/main/resources/password-blocklist.txt`, provenance in its
   header), not equal to the username or the e-mail address or its parts. No composition rules, no expiry. It holds
   for passwords set through the API (`POST /api/v1/users`, `POST /api/v1/users/{id}/reset-password`); values
-  written straight to the database (bootstrap above, psql) bypass it. Existing passwords keep working; the policy
-  applies at the next change.
+  written straight to the database (bootstrap above, psql, and any other role that can write `users` until the
+  database roles are separated, homelab#153) bypass it. Existing passwords keep working; the policy applies at the
+  next change.
 - **Costs:** user passwords bcrypt `APP_PASSWORD_BCRYPT_STRENGTH` (default 12, allowed 10–16); client secrets stay
   at cost 10. A user hash with a lower cost, without the `{bcrypt}` prefix or with `{noop}` is re-encoded at the
   user's next successful login (only while the stored hash is still the one that was checked). Client secrets
   stored as `{noop}` are re-encoded at cost 10 at the client's next authentication; cost-10 secrets stay as they
   are. The encoders know only `{bcrypt}`, `{noop}` and unprefixed bcrypt hashes; any other stored format no longer
-  verifies.
+  verifies. Until every user has logged in once, a login for an unknown username (checked against a cost-12 dummy
+  hash) takes longer than one for a user whose hash is still at cost 10; the difference disappears as users log in.
 - **Measure before deploying** (owner, once): bcrypt time on raspi4, the slowest node auth-service can run on. On
   raspi4 (`apache2-utils`; the value is a throwaway, not a password):
 ```bash
