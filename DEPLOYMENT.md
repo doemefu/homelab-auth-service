@@ -310,12 +310,24 @@ kubectl -n apps exec postgresql-0 -c postgresql -- psql -U postgres -d homelabdb
 ### Removed grafana and homeassistant clients (#154)
 
 Flyway V11 deletes both SSO client rows with their authorizations and consents when the release starts (the seeder
-never deletes rows; same pattern as V9 for n8n). Nothing to run by hand. If a pod of the previous release restarts
-after V11 ran, its seeder adds the rows again; then roll out again or run V11's statements by hand. Read-only check
-after the rollout (expected `0`):
+never deletes rows; same pattern as V9 for n8n). Nothing to run by hand. Read-only check after the rollout
+(expected `0`):
 ```bash
 kubectl -n apps exec postgresql-0 -c postgresql -- psql -U postgres -d homelabdb -tAc \
   "SELECT count(*) FROM oauth2_registered_client WHERE client_id IN ('grafana', 'homeassistant')"
+```
+If a pod of the previous release restarted after V11 ran, its seeder added the rows again. A new rollout does not
+remove them (Flyway has recorded V11, and the new seeder never deletes), so run V11's statements by hand (owner):
+```bash
+kubectl -n apps exec -i postgresql-0 -c postgresql -- psql -U postgres -d homelabdb -v ON_ERROR_STOP=1 <<'SQL'
+BEGIN;
+DELETE FROM oauth2_authorization_consent WHERE registered_client_id IN
+  (SELECT id FROM oauth2_registered_client WHERE client_id IN ('grafana', 'homeassistant') AND client_kind = 'sso');
+DELETE FROM oauth2_authorization WHERE registered_client_id IN
+  (SELECT id FROM oauth2_registered_client WHERE client_id IN ('grafana', 'homeassistant') AND client_kind = 'sso');
+DELETE FROM oauth2_registered_client WHERE client_id IN ('grafana', 'homeassistant') AND client_kind = 'sso';
+COMMIT;
+SQL
 ```
 Afterwards `grafana` and `homeassistant` are no longer reserved usernames.
 
