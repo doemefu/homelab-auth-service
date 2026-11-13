@@ -40,7 +40,7 @@ device-service and furchert-ch consume tokens issued by this service — device-
 | Spring Authorization Server | via `spring-boot-starter-oauth2-authorization-server` (Spring Boot 4.1 BOM-managed) |
 | springdoc-openapi | 3.1.1 |
 | Testcontainers BOM | 2.0.5 (project-managed via dependencyManagement import) |
-| Base image | `eclipse-temurin:25-jre-alpine` (build stage: `eclipse-temurin:25-jdk-alpine`) |
+| Base image | `eclipse-temurin:25-jre-alpine` (build stage: `eclipse-temurin:25-jdk-alpine`), both pinned by digest |
 
 ## Spring Boot 4.1 Notes
 
