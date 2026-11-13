@@ -56,9 +56,19 @@ public class GlobalExceptionHandler {
                 .body(errorBody(HttpStatus.FORBIDDEN, "Forbidden", null));
     }
 
+    /**
+     * Fallback for any other {@link IllegalArgumentException}: a constant text, because its message may echo request
+     * input or come from a library (#151). Expected rule failures throw {@link InvalidInputException} instead.
+     */
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, Object>> handleIllegalArgument(IllegalArgumentException ex) {
-        return ResponseEntity.badRequest().body(errorBody(HttpStatus.BAD_REQUEST, ex.getMessage(), null));
+        log.debug("Request rejected: {}", ex.getClass().getSimpleName());
+        return ResponseEntity.badRequest().body(errorBody(HttpStatus.BAD_REQUEST, "invalid request", null));
+    }
+
+    @ExceptionHandler(InvalidInputException.class)
+    public ResponseEntity<Map<String, Object>> handleInvalidInput(InvalidInputException ex) {
+        return ResponseEntity.badRequest().body(errorBody(HttpStatus.BAD_REQUEST, ex.getMessage(), ex.getDetails()));
     }
 
     /** A non-numeric query parameter (e.g. {@code after=abc}) is a client error, not a 500. */
@@ -77,13 +87,13 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<Map<String, Object>> handleNotFound(ResourceNotFoundException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body(errorBody(HttpStatus.NOT_FOUND, ex.getMessage(), null));
+                .body(errorBody(HttpStatus.NOT_FOUND, ex.getMessage(), ex.getDetails()));
     }
 
     @ExceptionHandler(ResourceConflictException.class)
     public ResponseEntity<Map<String, Object>> handleConflict(ResourceConflictException ex) {
         return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(errorBody(HttpStatus.CONFLICT, ex.getMessage(), null));
+                .body(errorBody(HttpStatus.CONFLICT, ex.getMessage(), ex.getDetails()));
     }
 
     /**

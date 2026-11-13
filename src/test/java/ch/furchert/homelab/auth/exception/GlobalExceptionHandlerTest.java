@@ -48,4 +48,39 @@ class GlobalExceptionHandlerTest {
         assertThat(response.getBody()).containsEntry("error", "Internal server error");
         assertThat(output).contains("Unhandled exception");
     }
+
+    // --- #151: constant messages, details keyed by request field, never request input ---
+
+    @Test
+    void invalidInputAnswers400WithItsConstantMessageAndDetails() {
+        ResponseEntity<Map<String, Object>> response = handler.handleInvalidInput(
+                new InvalidInputException("username already in use", Map.of("username", "already in use")));
+
+        assertThat(response.getStatusCode().value()).isEqualTo(400);
+        assertThat(response.getBody()).containsEntry("error", "username already in use")
+                .containsEntry("details", Map.of("username", "already in use"));
+    }
+
+    @Test
+    void anyOtherIllegalArgumentAnswersAConstantText() {
+        ResponseEntity<Map<String, Object>> response =
+                handler.handleIllegalArgument(new IllegalArgumentException("echo-of-input-x7q"));
+
+        assertThat(response.getStatusCode().value()).isEqualTo(400);
+        assertThat(response.getBody()).containsEntry("error", "invalid request").doesNotContainKey("details");
+        assertThat(response.getBody().toString()).doesNotContain("echo-of-input-x7q");
+    }
+
+    @Test
+    void conflictAndNotFoundCarryOptionalDetails() {
+        ResponseEntity<Map<String, Object>> conflict = handler.handleConflict(
+                new ResourceConflictException("client id not available", Map.of("clientId", "not available")));
+        assertThat(conflict.getStatusCode().value()).isEqualTo(409);
+        assertThat(conflict.getBody()).containsEntry("error", "client id not available")
+                .containsEntry("details", Map.of("clientId", "not available"));
+
+        ResponseEntity<Map<String, Object>> notFound = handler.handleNotFound(new ResourceNotFoundException("unknown user"));
+        assertThat(notFound.getStatusCode().value()).isEqualTo(404);
+        assertThat(notFound.getBody()).containsEntry("error", "unknown user").doesNotContainKey("details");
+    }
 }

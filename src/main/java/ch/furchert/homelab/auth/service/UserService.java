@@ -7,6 +7,7 @@ import ch.furchert.homelab.auth.dto.UserPage;
 import ch.furchert.homelab.auth.dto.UserResponse;
 import ch.furchert.homelab.auth.entity.Role;
 import ch.furchert.homelab.auth.entity.User;
+import ch.furchert.homelab.auth.exception.InvalidInputException;
 import ch.furchert.homelab.auth.exception.ResourceNotFoundException;
 import ch.furchert.homelab.auth.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -17,6 +18,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -35,13 +38,13 @@ public class UserService {
     public UserResponse createUser(CreateUserRequest request) {
         reservedClientIds.lockIdentityNamespace();
         if (reservedClientIds.isReserved(request.username())) {
-            throw new IllegalArgumentException("Username is reserved: " + request.username());
+            throw invalid("username not available", "username", "not available");
         }
         if (userRepository.existsByUsername(request.username())) {
-            throw new IllegalArgumentException("Username already taken: " + request.username());
+            throw invalid("username already in use", "username", "already in use");
         }
         if (userRepository.existsByEmail(request.email())) {
-            throw new IllegalArgumentException("Email already registered: " + request.email());
+            throw invalid("email already in use", "email", "already in use");
         }
 
         Role role = request.role() != null ? request.role() : Role.USER;
@@ -57,10 +60,10 @@ public class UserService {
 
     public UserPage listUsers(int page, int size) {
         if (page < 0) {
-            throw new IllegalArgumentException("page must be >= 0");
+            throw invalid("page must be >= 0", "page", "must be >= 0");
         }
         if (size < 1 || size > MAX_PAGE_SIZE) {
-            throw new IllegalArgumentException("size must be between 1 and " + MAX_PAGE_SIZE);
+            throw invalid("size must be between 1 and " + MAX_PAGE_SIZE, "size", "must be between 1 and " + MAX_PAGE_SIZE);
         }
         Page<User> result = userRepository.findAll(PageRequest.of(page, size, Sort.by("id")));
         return new UserPage(result.map(UserResponse::from).getContent(), page, size, result.getTotalElements());
@@ -77,10 +80,10 @@ public class UserService {
         if (request.username() != null && !request.username().equals(user.getUsername())) {
             reservedClientIds.lockIdentityNamespace();
             if (reservedClientIds.isReserved(request.username())) {
-                throw new IllegalArgumentException("Username is reserved: " + request.username());
+                throw invalid("username not available", "username", "not available");
             }
             if (userRepository.existsByUsername(request.username())) {
-                throw new IllegalArgumentException("Username already taken: " + request.username());
+                throw invalid("username already in use", "username", "already in use");
             }
             // Revoke all active sessions for the old username before renaming.
             // oauth2_authorization rows are keyed by principal_name — any refresh tokens
@@ -90,7 +93,7 @@ public class UserService {
         }
         if (request.email() != null && !request.email().equals(user.getEmail())) {
             if (userRepository.existsByEmail(request.email())) {
-                throw new IllegalArgumentException("Email already registered: " + request.email());
+                throw invalid("email already in use", "email", "already in use");
             }
             user.setEmail(request.email());
         }
@@ -102,7 +105,7 @@ public class UserService {
         }
         if (request.status() != null) {
             if (!VALID_STATUSES.contains(request.status())) {
-                throw new IllegalArgumentException("Invalid status: " + request.status());
+                throw invalid("unsupported status value", "status", "unsupported value");
             }
             user.setStatus(request.status());
             if ("INACTIVE".equals(request.status())) {
@@ -129,10 +132,10 @@ public class UserService {
 
         if (!isAdmin) {
             if (request.currentPassword() == null || request.currentPassword().isBlank()) {
-                throw new IllegalArgumentException("Current password is required");
+                throw invalid("Current password is required", "currentPassword", "required");
             }
             if (!passwordEncoder.matches(request.currentPassword(), user.getPasswordHash())) {
-                throw new IllegalArgumentException("Current password is incorrect");
+                throw invalid("Current password is incorrect", "currentPassword", "incorrect");
             }
         }
 
@@ -156,7 +159,12 @@ public class UserService {
     }
 
     private static ResourceNotFoundException notFound(Long id) {
-        return new ResourceNotFoundException("User not found: " + id);
+        return new ResourceNotFoundException("unknown user");
+    }
+
+    /** Constant message and details (#151): an error body never echoes request input. */
+    private static InvalidInputException invalid(String message, String field, String detail) {
+        return new InvalidInputException(message, Map.of(field, detail));
     }
 
     private User findById(Long id) {
