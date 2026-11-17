@@ -200,7 +200,11 @@ class McpHubTokenGateTest extends AbstractIntegrationTest {
         // real key and typ JWT. Exact statuses, so a 401 "for the wrong reason" (no bearer token extracted,
         // wrong decoder) cannot pass the gate: own user record → 200; device-client admin API → 403
         // (authenticated, but neither role ADMIN nor scope clients:admin — the hub token carries no role).
-        String control = flow.resign(t.accessToken(), "JWT");
+        // typ JWT alone is not enough: the admin API also accepts only first-party audiences (#153).
+        mockMvc.perform(get("/api/v1/users/{id}", id).header("Authorization", "Bearer "
+                        + flow.resign(t.accessToken(), "JWT")))
+                .andExpect(status().isUnauthorized());
+        String control = flow.resign(t.accessToken(), "JWT", "furchert-ch");
         mockMvc.perform(get("/api/v1/users/{id}", id).header("Authorization", "Bearer " + control))
                 .andExpect(status().isOk());
         mockMvc.perform(get("/api/v1/clients").header("Authorization", "Bearer " + control))
