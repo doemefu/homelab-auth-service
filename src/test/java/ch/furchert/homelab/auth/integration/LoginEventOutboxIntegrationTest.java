@@ -37,6 +37,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -300,6 +301,17 @@ class LoginEventOutboxIntegrationTest extends AbstractIntegrationTest {
         mockMvc.perform(get("/api/v1/login-events").param("limit", "1000")
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk());
+        // #151: constant error text, the field under details, never the submitted value
+        mockMvc.perform(get("/api/v1/login-events").param("after", "-1")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("after must be >= 0"))
+                .andExpect(jsonPath("$.details.after").value("must be >= 0"));
+        mockMvc.perform(get("/api/v1/login-events").param("limit", "1001")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("limit must be between 1 and 1000"))
+                .andExpect(jsonPath("$.details.limit").value("must be between 1 and 1000"));
     }
 
     // --- purge -----------------------------------------------------------------------------

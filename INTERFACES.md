@@ -599,7 +599,8 @@ are not affected.
 `{"username": "already in use"}`, `"email already in use"` / `{"email": "already in use"}`,
 `"unsupported status value"` / `{"status": "unsupported value"}`, `"Current password is required"` or
 `"Current password is incorrect"` / `{"currentPassword": "required" | "incorrect"}`, `"page must be >= 0"`,
-`"size must be between 1 and 100"`; `404` `"unknown user"` and `"unknown client"`; `409` `"client already exists"`
+`"size must be between 1 and 100"`, and for `GET /login-events` `"after must be >= 0"` / `{"after": "must be >= 0"}`
+and `"limit must be between 1 and 1000"` / `{"limit": "must be between 1 and 1000"}`; `404` `"unknown user"` and `"unknown client"`; `409` `"client already exists"`
 / `{"clientId": "already exists"}` and `"client id not available"` / `{"clientId": "not available"}`. Any other
 `400` from a rejected argument answers `"invalid request"`. Request-validation errors keep
 `"Validation failed"` with the field messages under `details`.
