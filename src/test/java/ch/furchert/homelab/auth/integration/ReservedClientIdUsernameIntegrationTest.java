@@ -44,7 +44,7 @@ class ReservedClientIdUsernameIntegrationTest extends AbstractIntegrationTest {
 
     private ResultActions createUser(String username) throws Exception {
         return asAdmin(post("/api/v1/users"), "{\"username\":\"" + username + "\",\"email\":\"" + username
-                + "@test.local\",\"password\":\"password123\"}");
+                + "@test.local\",\"password\":\"correct-horse-battery-staple\"}");
     }
 
     private void deleteUser(String username) {
@@ -86,7 +86,7 @@ class ReservedClientIdUsernameIntegrationTest extends AbstractIntegrationTest {
             User user = new User();
             user.setUsername(name);
             user.setEmail(name + "@test.local");
-            user.setPasswordHash(passwordEncoder.encode("password123"));
+            user.setPasswordHash(passwordEncoder.encode("correct-horse-battery-staple"));
             user.setRole(Role.USER);
             user.setStatus("ACTIVE");
             long id = userRepository.save(user).getId();
@@ -126,7 +126,7 @@ class ReservedClientIdUsernameIntegrationTest extends AbstractIntegrationTest {
             User user = new User();
             user.setUsername(stored);
             user.setEmail("wa5-dev-padded@test.local");
-            user.setPasswordHash(passwordEncoder.encode("password123"));
+            user.setPasswordHash(passwordEncoder.encode("correct-horse-battery-staple"));
             user.setRole(Role.USER);
             user.setStatus("ACTIVE");
             userRepository.save(user);

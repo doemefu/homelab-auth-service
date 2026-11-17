@@ -95,7 +95,8 @@ public class AuthorizationServerConfig {
     @Bean
     @Order(1)
     public SecurityFilterChain authorizationServerSecurityFilterChain(HttpSecurity http, LoginThrottle loginThrottle,
-                                                                      RegisteredClientRepository registeredClientRepository) {
+                                                                      RegisteredClientRepository registeredClientRepository,
+                                                                      ClientSecretEncoder clientSecretEncoder) {
         http
                 .securityMatcher("/oauth2/**", "/.well-known/**", "/userinfo", "/connect/**")
                 .oauth2AuthorizationServer(as -> as
@@ -103,11 +104,16 @@ public class AuthorizationServerConfig {
                         // endpoint that authenticates clients; 429 for throttled attempts, SAS default otherwise.
                         .clientAuthentication(client -> client
                                 .authenticationProviders(providers -> {
-                                    providers.replaceAll(provider ->
-                                            provider instanceof ClientSecretAuthenticationProvider secret
-                                                    ? new ThrottlingClientSecretAuthenticationProvider(
-                                                            secret, loginThrottle, registeredClientRepository)
-                                                    : provider);
+                                    providers.replaceAll(provider -> {
+                                        if (!(provider instanceof ClientSecretAuthenticationProvider secret)) {
+                                            return provider;
+                                        }
+                                        // Cost-10 client-secret encoder, not the user-password bean (#150):
+                                        // SAS re-encodes a secret whose cost is below the encoder's.
+                                        secret.setPasswordEncoder(clientSecretEncoder.encoder());
+                                        return new ThrottlingClientSecretAuthenticationProvider(
+                                                secret, loginThrottle, registeredClientRepository);
+                                    });
                                     // Fail start-up rather than run without the client throttle.
                                     Assert.state(providers.stream().anyMatch(
                                                     ThrottlingClientSecretAuthenticationProvider.class::isInstance),

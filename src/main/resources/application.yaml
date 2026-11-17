@@ -45,22 +45,6 @@ app:
       access-token-ttl-seconds: 3600
       allowed-scopes: [ mqtt:pub, mqtt:sub ]
     clients:
-      - client-id: grafana
-        # The env var must include the Spring Security {id} prefix; production: "{bcrypt}$2y$10$..." (other encodings log a WARN, #100).
-        client-secret: "${GRAFANA_CLIENT_SECRET}"
-        redirect-uris:
-          - https://grafana.furchert.ch/login/generic_oauth
-        post-logout-redirect-uris:
-          - https://grafana.furchert.ch
-        scopes: [ openid, profile, email ]
-      - client-id: homeassistant
-        # The env var must include the Spring Security {id} prefix; production: "{bcrypt}$2y$10$..." (other encodings log a WARN, #100).
-        client-secret: "${HA_CLIENT_SECRET}"
-        redirect-uris:
-          - https://ha.furchert.ch/auth/oidc/callback
-        post-logout-redirect-uris:
-          - https://ha.furchert.ch
-        scopes: [ openid, profile, email ]
       - client-id: device-service
         # The env var must include the Spring Security {id} prefix; production: "{bcrypt}$2y$10$..." (other encodings log a WARN, #100).
         client-secret: "${DEVICE_SERVICE_CLIENT_SECRET}"
@@ -165,6 +149,11 @@ app:
     client-id: { max-failures: 50, window: 5m, lock-duration: 5m }
     known-good-ttl: 30d
     max-entries: 30000
+  # bcrypt cost for user passwords (#150); client secrets stay at cost 10. A stored user hash with a lower
+  # cost is re-encoded at the user's next successful login. Measure on the slowest node before raising it
+  # (DEPLOYMENT.md "Password policy and hashing cost (#150)").
+  password:
+    bcrypt-strength: ${APP_PASSWORD_BCRYPT_STRENGTH:12}
 
 management:
   endpoints:
