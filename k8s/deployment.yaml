@@ -28,7 +28,7 @@ spec:
       containers:
         - name: auth-service
           # Image tag is managed by Flux CD image automation.
-          image: ghcr.io/doemefu/homelab-auth-service:main-20261113T021326 # {"$imagepolicy": "flux-system:auth-service"}
+          image: ghcr.io/doemefu/homelab-auth-service:main-20261113T024130 # {"$imagepolicy": "flux-system:auth-service"}
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
@@ -49,16 +49,10 @@ spec:
               value: "file:/etc/secrets/private.pem"
             - name: APP_JWT_PUBLIC_KEY
               value: "file:/etc/secrets/public.pem"
-            - name: GRAFANA_CLIENT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: homelab-auth-secrets
-                  key: grafana-client-secret
-            - name: HA_CLIENT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: homelab-auth-secrets
-                  key: ha-client-secret
+            # bcrypt cost for user passwords (#150): one cost-12 hash takes ~540 ms on raspi4, over
+            # the ~300 ms budget, so 11 (~270 ms). Values in DEPLOYMENT.md "Password policy and hashing cost".
+            - name: APP_PASSWORD_BCRYPT_STRENGTH
+              value: "11"
             - name: DEVICE_SERVICE_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:

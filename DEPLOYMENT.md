@@ -22,7 +22,7 @@ Comprehensive deployment and operational guidance for auth-service.
 |--------|------|---------|
 | `homelab-db-credentials` | `username`, `password` | Database |
 | `homelab-auth-rsa-keys` | `private.pem`, `public.pem` | JWT signing keys |
-| `homelab-auth-secrets` | Client secrets for Grafana, Home Assistant, device-service, LiteLLM; optional `claude-mcp-hub-client-secret`, `claude-mcp-hub-allowed-users`, `claude-club-mcp-client-secret`, `claude-club-mcp-allowed-users` | OIDC client auth |
+| `homelab-auth-secrets` | Client secrets for device-service, LiteLLM; optional `claude-mcp-hub-client-secret`, `claude-mcp-hub-allowed-users`, `claude-club-mcp-client-secret`, `claude-club-mcp-allowed-users` | OIDC client auth |
 | `sentry-dsn` | `dsn` | Error tracking (optional) |
 
 ### Cloudflare Tunnel
@@ -73,8 +73,6 @@ openssl genrsa -out private.pem 2048
 openssl rsa -in private.pem -pubout -out public.pem
 kubectl create secret generic homelab-auth-rsa-keys -n apps --from-file=private.pem --from-file=public.pem
 kubectl create secret generic homelab-auth-secrets -n apps \
-  --from-literal=grafana-client-secret='{bcrypt}<hash>' \
-  --from-literal=ha-client-secret='{bcrypt}<hash>' \
   --from-literal=device-service-client-secret='{bcrypt}<hash>' \
   --from-literal=litellm-client-secret-authservice='{bcrypt}<hash>'
 rm private.pem public.pem
@@ -92,11 +90,16 @@ rm private.pem public.pem
 
 2. **Configure Cloudflare Tunnel** (see above)
 
-3. **Bootstrap first admin:**
+3. **Bootstrap first admin.** This direct insert bypasses the API's password policy, so pick a password that meets
+   it: at least 15 characters, at most 72 bytes, not a common password, not the username or e-mail address
+   (`INTERFACES.md` §4 "Password policy"). `htpasswd` prompts for it, so it never lands in the shell history or the
+   process list:
 ```bash
-HASH=$(htpasswd -bnBC 12 "" yourpassword | tr -d ':\n')
-kubectl exec -n apps deploy/postgresql -- psql -U postgres -d homelabdb \
-  -c "INSERT INTO users (username, email, password_hash, role, status) VALUES ('admin', 'admin@homelab.local', '${HASH}', 'ADMIN', 'ACTIVE');"
+HASH="{bcrypt}$(htpasswd -nBC 11 "" | tr -d ':\n')"   # prompts twice; cost = APP_PASSWORD_BCRYPT_STRENGTH in k8s/deployment.yaml (11)
+kubectl -n apps exec -i postgresql-0 -c postgresql -- psql -U postgres -d homelabdb -v ON_ERROR_STOP=1 <<SQL
+INSERT INTO users (username, email, password_hash, role, status) VALUES ('admin', 'admin@homelab.local', '${HASH}', 'ADMIN', 'ACTIVE');
+SQL
+unset HASH
 ```
 
 4. **Deploy:** Push to `main` or `kubectl apply -k k8s/`
@@ -230,11 +233,8 @@ Fix, per client (owner action; the plaintext the client application uses does no
 ```bash
 f=$(mktemp); printf 'x:%s\n' '<hash without the {bcrypt} prefix>' > "$f"; htpasswd -v "$f" x; rm -f "$f"
 ```
-2. Configured value: Grafana and Home Assistant keys are written verbatim by playbook 59 from the owner's encrypted
-   variables `auth_service_grafana_client_secret` / `auth_service_ha_client_secret`; change the variable and run
-   playbook 59 (owner). A direct `kubectl patch` of the key is reverted by the next playbook run. For
-   `device-service`, `litellm`, `furchert-ch` and `data-service` playbook 59 adds the `{noop}` prefix itself
-   and gives the consumer the same variable, so their switch needs the playbook change of homelab#154 first. The
+2. Configured value: for `device-service`, `litellm`, `furchert-ch` and `data-service` playbook 59 adds the `{noop}`
+   prefix itself and gives the consumer the same variable, so their switch needs the playbook change of homelab#154 first. The
    consumer keeps the plaintext in its own Secret key.
 3. Stored row (only when the WARN names it): trigger one login or token request of the client. Spring Authorization
    Server then re-encodes the row with a fresh `{bcrypt}` hash, and a wrong hash cannot be stored. Only for a client
@@ -259,9 +259,6 @@ actions; playbook runs and restarts need a go. Order:
    "Client secret not stored as {bcrypt}" step 1.
 2. Put the new values into the encrypted variables and run playbook 59 (it updates the Kubernetes Secrets; no pod
    restarts):
-   - `grafana`, `homeassistant`: the auth-service key (`auth_service_grafana_client_secret` /
-     `auth_service_ha_client_secret`) gets the `{bcrypt}` value. Their own configuration (set in the Grafana and Home
-     Assistant UIs) gets the plaintext in step 4, not now, because a UI change applies at once.
    - `device-service`, `litellm`, `furchert-ch`, `data-service`: one variable feeds both sides today (playbook 59
      adds `{noop}` for auth-service, the consumer gets the plaintext), so set it to the new plaintext. homelab#154
      splits them so that auth-service gets a `{bcrypt}` value.
@@ -275,13 +272,10 @@ UPDATE oauth2_registered_client SET client_secret = '<{bcrypt} value>' WHERE cli
 SQL
 # expected: UPDATE 1
 ```
-4. At once: restart the consumer so it reads the new plaintext (Flux apps: `kubectl -n apps delete pod -l app=<name>`),
-   or for Grafana and Home Assistant enter it in their UI. A consumer that kept retrying the old secret may get `429`
-   for up to 5 minutes ("Login throttle").
+4. At once: restart the consumer so it reads the new plaintext (Flux apps: `kubectl -n apps delete pod -l app=<name>`).
+   A consumer that kept retrying the old secret may get `429` for up to 5 minutes ("Login throttle").
 5. Verify with one login or token request of the client (and its logs show no `invalid_client`).
-6. Optional for `grafana`/`homeassistant`: restart auth-service (see "Restart service") so it reads the new configured
-   value and its start-up WARN for that client disappears. The four shared-variable clients keep a `{noop}` configured
-   value until homelab#154.
+6. The four shared-variable clients keep a `{noop}` configured value until homelab#154.
 
 ### Revoke a device client
 
@@ -318,6 +312,30 @@ kubectl -n apps exec postgresql-0 -c postgresql -- psql -U postgres -d homelabdb
   "SELECT client_id, client_kind, authorization_grant_types, client_authentication_methods, substring(client_secret from '^[{][^}]*[}]') AS secret_encoding FROM oauth2_registered_client ORDER BY client_kind, client_id"
 ```
 
+### Removed grafana and homeassistant clients (#154)
+
+Flyway V11 deletes both SSO client rows with their authorizations and consents when the release starts (the seeder
+never deletes rows; same pattern as V9 for n8n). Nothing to run by hand. Read-only check after the rollout
+(expected `0`):
+```bash
+kubectl -n apps exec postgresql-0 -c postgresql -- psql -U postgres -d homelabdb -tAc \
+  "SELECT count(*) FROM oauth2_registered_client WHERE client_id IN ('grafana', 'homeassistant')"
+```
+If a pod of the previous release restarted after V11 ran, its seeder added the rows again. A new rollout does not
+remove them (Flyway has recorded V11, and the new seeder never deletes), so run V11's statements by hand (owner):
+```bash
+kubectl -n apps exec -i postgresql-0 -c postgresql -- psql -U postgres -d homelabdb -v ON_ERROR_STOP=1 <<'SQL'
+BEGIN;
+DELETE FROM oauth2_authorization_consent WHERE registered_client_id IN
+  (SELECT id FROM oauth2_registered_client WHERE client_id IN ('grafana', 'homeassistant') AND client_kind = 'sso');
+DELETE FROM oauth2_authorization WHERE registered_client_id IN
+  (SELECT id FROM oauth2_registered_client WHERE client_id IN ('grafana', 'homeassistant') AND client_kind = 'sso');
+DELETE FROM oauth2_registered_client WHERE client_id IN ('grafana', 'homeassistant') AND client_kind = 'sso';
+COMMIT;
+SQL
+```
+Afterwards `grafana` and `homeassistant` are no longer reserved usernames.
+
 ### Check usernames against client ids
 
 Read-only; prints client ids and counts only, never usernames (#143). Names are compared like the service does:
@@ -328,7 +346,7 @@ kubectl -n apps exec postgresql-0 -c postgresql -- psql -U postgres -d homelabdb
   "SELECT c.client_id, count(*) FROM users u JOIN oauth2_registered_client c ON lower(regexp_replace(u.username, '^\s+|\s+\$', '', 'g')) = lower(btrim(c.client_id)) GROUP BY c.client_id"
 # Users whose name equals a configured client id (also covers clients not seeded yet):
 kubectl -n apps exec postgresql-0 -c postgresql -- psql -U postgres -d homelabdb -tAc \
-  "SELECT count(*) FROM users WHERE lower(regexp_replace(username, '^\s+|\s+\$', '', 'g')) IN ('grafana','homeassistant','device-service','litellm','furchert-ch','data-service','claude-mcp-hub','claude-club-mcp')"
+  "SELECT count(*) FROM users WHERE lower(regexp_replace(username, '^\s+|\s+\$', '', 'g')) IN ('device-service','litellm','furchert-ch','data-service','claude-mcp-hub','claude-club-mcp')"
 # Stored authorizations of a non-client_credentials grant that hold a service scope:
 kubectl -n apps exec postgresql-0 -c postgresql -- psql -U postgres -d homelabdb -tAc \
   "SELECT count(*) FROM oauth2_authorization WHERE authorization_grant_type <> 'client_credentials' AND EXISTS (SELECT 1 FROM unnest(string_to_array(authorized_scopes, ',')) s WHERE s LIKE 'netmon:%' OR s LIKE 'analytics:%' OR s LIKE 'login-events:%' OR s = 'clients:admin')"
@@ -646,6 +664,48 @@ Common: Insufficient CPU/memory, nodeSelector mismatch, image not available for 
 
 ---
 
+### Password policy and hashing cost (#150)
+
+- **Policy** (contract: `INTERFACES.md` §4 "Password policy"): at least 15 characters, at most 72 bytes in UTF-8,
+  not on the bundled list of common passwords (`src/main/resources/password-blocklist.txt`, provenance in its
+  header), not equal to the username or the e-mail address or its parts. No composition rules, no expiry. It holds
+  for passwords set through the API (`POST /api/v1/users`, `POST /api/v1/users/{id}/reset-password`); values
+  written straight to the database (bootstrap above, psql, and any other role that can write `users` until the
+  database roles are separated, homelab#153) bypass it. Existing passwords keep working; the policy applies at the
+  next change.
+- **Costs:** user passwords bcrypt `APP_PASSWORD_BCRYPT_STRENGTH` (default 12, allowed 10–16); client secrets stay
+  at cost 10. A user hash with a lower cost, without the `{bcrypt}` prefix or with `{noop}` is re-encoded at the
+  user's next successful login (only while the stored hash is still the one that was checked). Client secrets
+  stored as `{noop}` are re-encoded at cost 10 at the client's next authentication; cost-10 secrets stay as they
+  are. The encoders know only `{bcrypt}`, `{noop}` and unprefixed bcrypt hashes; any other stored format no longer
+  verifies. Until every user has logged in once, a login for an unknown username (checked against a dummy hash at the
+  configured user cost) takes longer than one for a user whose hash is still at cost 10; the difference disappears as users log in.
+- **Measure before deploying** (owner, once): bcrypt time on raspi4, the slowest node auth-service can run on. On
+  raspi4 (`apache2-utils`; the value is a throwaway, not a password):
+```bash
+for c in 10 11 12; do /usr/bin/time -f "cost $c: %e s" htpasswd -nbBC "$c" x timing-test-value >/dev/null; done
+```
+  Keep 12 if one cost-12 hash takes at most about 300 ms; otherwise set `APP_PASSWORD_BCRYPT_STRENGTH` to `"11"` in
+  the container `env` of `k8s/deployment.yaml` (pull request). Java's bcrypt is not faster than `htpasswd`, so treat
+  a value near the limit as over it. Record the measured values here:
+  - raspi4 (2026-11-17, libxcrypt via Python `crypt`, 3 runs each): cost 10 ≈ 137 ms, cost 11 ≈ 271 ms, cost 12 ≈
+    541 ms. Cost 12 is over the budget, so the Deployment sets `APP_PASSWORD_BCRYPT_STRENGTH` to `"11"`.
+- **Hash census** (owner, read-only, prints counts and cost digits only, never secret characters). Run it before
+  the deploy and again 24 h after:
+```bash
+kubectl -n apps exec -i postgresql-0 -c postgresql -- psql -U postgres -d homelabdb -v ON_ERROR_STOP=1 <<'SQL'
+SELECT substring(password_hash from '\$2[aby]?\$[0-9]{2}\$') AS cost, left(password_hash,8) = '{bcrypt}' AS prefixed, count(*) FROM users GROUP BY 1,2;
+SELECT CASE WHEN client_secret LIKE '{noop}%' THEN 'noop' WHEN client_secret ~ '^\{bcrypt\}\$2[aby]?\$10\$' THEN 'bcrypt10' WHEN client_secret LIKE '{bcrypt}%' THEN 'bcrypt-other' ELSE 'other' END AS kind, count(*) FROM oauth2_registered_client GROUP BY 1;
+SQL
+```
+  - Before: every user row has a cost (`$2a$`, `$2b$` or `$2y$`); a row with an empty cost is not bcrypt: stop and
+    check it, because it would no longer verify. Clients: only `noop` and `bcrypt10`, and zero `other`.
+  - After 24 h: users who logged in show the configured cost (11, `APP_PASSWORD_BCRYPT_STRENGTH` in
+    `k8s/deployment.yaml`); clients still show zero `bcrypt-other` (no client secret was
+    re-encoded at the user cost).
+- **Rollback:** revert the merge; cost-12 hashes keep verifying under the old encoder (the cost is part of each
+  hash).
+
 ## Configuration reference
 
 ### Environment variables
@@ -655,9 +715,8 @@ Common: Insufficient CPU/memory, nodeSelector mismatch, image not available for 
 | `DB_USERNAME` | `homelab-db-credentials` | Yes | PostgreSQL username |
 | `DB_PASSWORD` | `homelab-db-credentials` | Yes | PostgreSQL password |
 | `DB_URL` | Config | No | JDBC URL (default: `jdbc:postgresql://postgresql.apps.svc.cluster.local:5432/homelabdb`) |
-| `GRAFANA_CLIENT_SECRET` | `homelab-auth-secrets` | Yes | Grafana OIDC client secret |
-| `HA_CLIENT_SECRET` | `homelab-auth-secrets` | Yes | Home Assistant OIDC client secret |
 | `DEVICE_SERVICE_CLIENT_SECRET` | `homelab-auth-secrets` | Yes | device-service OIDC client secret |
+| `APP_PASSWORD_BCRYPT_STRENGTH` | Config | No | bcrypt cost for user passwords, 10–16 (default 12); client secrets always use 10 |
 | `LITELLM_CLIENT_SECRET` | `homelab-auth-secrets` | Yes | LiteLLM OIDC client secret |
 | `CLAUDE_MCP_HUB_CLIENT_SECRET` | `homelab-auth-secrets` (`claude-mcp-hub-client-secret`) | No | `claude-mcp-hub` client secret, `{bcrypt}` cost 10; blank = client not seeded |
 | `CLAUDE_MCP_HUB_ALLOWED_USERS` | `homelab-auth-secrets` (`claude-mcp-hub-allowed-users`) | No | Usernames allowed to use `claude-mcp-hub`, comma-separated, exact spelling; empty = everyone rejected |

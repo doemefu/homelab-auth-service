@@ -33,6 +33,7 @@ public class UserService {
     private final PasswordEncoder passwordEncoder;
     private final JdbcTemplate jdbcTemplate;
     private final ReservedClientIds reservedClientIds;
+    private final PasswordPolicy passwordPolicy;
 
     @Transactional
     public UserResponse createUser(CreateUserRequest request) {
@@ -46,6 +47,8 @@ public class UserService {
         if (userRepository.existsByEmail(request.email())) {
             throw invalid("email already in use", "email", "already in use");
         }
+
+        passwordPolicy.check("password", request.password(), request.username(), request.email());
 
         Role role = request.role() != null ? request.role() : Role.USER;
 
@@ -139,6 +142,7 @@ public class UserService {
             }
         }
 
+        passwordPolicy.check("newPassword", request.newPassword(), user.getUsername(), user.getEmail());
         user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
         userRepository.save(user);
         // Force re-authentication: revoke all active OAuth2 authorizations (including

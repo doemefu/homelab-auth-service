@@ -8,7 +8,7 @@ This document describes how external services, applications, and clients interac
 
 The auth-service exposes **three types of interfaces**:
 
-1. **OIDC Protocol Endpoints** — For OIDC-compatible clients (Grafana, Home Assistant, LiteLLM)
+1. **OIDC Protocol Endpoints** — For OIDC-compatible clients (furchert-ch, LiteLLM, device-service Swagger UI)
 2. **REST API** — For programmatic user management (admin operations)
 3. **JWKS Endpoint** — For service-to-service token validation
 
@@ -158,51 +158,11 @@ GET /connect/logout?id_token_hint=<id_token>&post_logout_redirect_uri=<registere
 
 ## 2. Client-Specific Integration Guides
 
-### Grafana
+### Grafana and Home Assistant
 
-Grafana uses the Generic OAuth provider. Add to `grafana.ini`:
-
-```ini
-[auth.generic_oauth]
-enabled = true
-name = Homelab SSO
-icon = signin
-client_id = grafana
-client_secret = ${GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET}
-scopes = openid profile email
-auth_url = https://auth.furchert.ch/oauth2/authorize
-token_url = https://auth.furchert.ch/oauth2/token
-api_url = https://auth.furchert.ch/userinfo
-use_pkce = true
-role_attribute_path = role == 'ADMIN' && 'Admin' || 'Viewer'
-```
-
-**Note:** Set `role_attribute_path` to map the `role` claim to Grafana roles. Adjust the expression based on your Grafana permission model.
-
-### Home Assistant
-
-In `configuration.yaml`:
-
-```yaml
-http:
-  use_x_forwarded_for: true
-  trusted_proxies:
-    - 10.0.0.0/8
-
-oidc:
-  discovery_url: https://auth.furchert.ch/.well-known/openid-configuration
-  client_id: homeassistant
-  client_secret: !secret ha_oidc_client_secret
-  scopes:
-    - openid
-    - profile
-    - email
-```
-
-Add to `secrets.yaml`:
-```yaml
-ha_oidc_client_secret: <plaintext-secret>
-```
+No OIDC clients: neither application is configured for OIDC login against this IdP. The former
+`grafana` and `homeassistant` client registrations were removed (#154); see `DEPLOYMENT.md`
+§ "Removed grafana and homeassistant clients" (Flyway V11 deletes the stored rows).
 
 ### n8n
 
@@ -605,14 +565,30 @@ The REST API uses **Bearer token authentication** with JWT tokens obtained via O
 | All `/clients` endpoints | `ADMIN` **or** `clients:admin` scope | IoT device client lifecycle — see §8 |
 | `GET /login-events` | `login-events:read` scope only (ADMIN gets 403) | Login-event outbox for data-service — see §2 "data-service" |
 
+**Password policy (#150).** `password` on `POST /users` and `newPassword` on
+`POST /users/{id}/reset-password` must have at least 15 characters (Unicode code points) and at most 72 bytes in
+UTF-8. They must not be on the bundled list of common passwords, and must not equal the username, the e-mail
+address, its local part or its domain. The list and account comparisons ignore case and surrounding whitespace.
+There are no composition rules and no expiry. A rejection answers `400` and names the failed rule under the field:
+
+```json
+{ "status": 400, "error": "password does not meet the policy", "timestamp": "…",
+  "details": { "newPassword": "too common: it appears in lists of breached passwords" } }
+```
+
+The rule texts are `too short: use at least 15 characters`, `too long: use at most 72 bytes (UTF-8)`,
+`too common: it appears in lists of breached passwords` and `must not be the username or the e-mail address`.
+A value outside 15–72 characters is already refused by request validation (`"error": "Validation failed"`, the
+field under `details`). The policy applies when a password is set; existing passwords keep working.
+
 `GET /users?page=0&size=50` lists users ordered by `id` ascending (`page` zero-based, `size` 1–100, default 50; out-of-range values return `400`). Response: `{ "users": [<UserResponse>…], "page": 0, "size": 50, "totalElements": 7 }` — each entry has the same shape as `GET /users/{id}` (`id`, `username`, `email`, `role`, `status`, `createdAt`, `updatedAt`). The `clients:admin` scope does **not** grant access; a user token with role `ADMIN` is required (furchert-ch `/dashboard/auth` calls it server-side with the signed-in admin's access token).
 
 **Reserved usernames (#143).** Every registered client id is reserved as a username,
 compared ignoring case and surrounding whitespace: every `app.oidc.clients[*].client-id`
 in `application.yaml` (also when that client is not seeded yet) and every client id
 stored in `oauth2_registered_client`, including IoT device clients (§8). Today this is
-`grafana`, `homeassistant`, `device-service`, `litellm`, `furchert-ch`,
-`data-service`, `claude-mcp-hub`, `claude-club-mcp` and every device client id
+`device-service`, `litellm`, `furchert-ch`, `data-service`, `claude-mcp-hub`,
+`claude-club-mcp` and every device client id
 (keep this list in step with `app.oidc.clients` in `application.yaml`).
 `POST /users` or a rename via `PUT /users/{id}` to a reserved name answers `400`
 (`"error": "username not available"`, `"details": {"username": "not available"}`); updates without a rename
