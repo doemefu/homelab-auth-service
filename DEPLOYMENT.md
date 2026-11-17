@@ -95,7 +95,7 @@ rm private.pem public.pem
    (`INTERFACES.md` §4 "Password policy"). `htpasswd` prompts for it, so it never lands in the shell history or the
    process list:
 ```bash
-HASH="{bcrypt}$(htpasswd -nBC 12 "" | tr -d ':\n')"   # prompts twice; cost 12 = the default user cost
+HASH="{bcrypt}$(htpasswd -nBC 11 "" | tr -d ':\n')"   # prompts twice; cost = APP_PASSWORD_BCRYPT_STRENGTH in k8s/deployment.yaml (11)
 kubectl -n apps exec -i postgresql-0 -c postgresql -- psql -U postgres -d homelabdb -v ON_ERROR_STOP=1 <<SQL
 INSERT INTO users (username, email, password_hash, role, status) VALUES ('admin', 'admin@homelab.local', '${HASH}', 'ADMIN', 'ACTIVE');
 SQL
@@ -678,8 +678,8 @@ Common: Insufficient CPU/memory, nodeSelector mismatch, image not available for 
   user's next successful login (only while the stored hash is still the one that was checked). Client secrets
   stored as `{noop}` are re-encoded at cost 10 at the client's next authentication; cost-10 secrets stay as they
   are. The encoders know only `{bcrypt}`, `{noop}` and unprefixed bcrypt hashes; any other stored format no longer
-  verifies. Until every user has logged in once, a login for an unknown username (checked against a cost-12 dummy
-  hash) takes longer than one for a user whose hash is still at cost 10; the difference disappears as users log in.
+  verifies. Until every user has logged in once, a login for an unknown username (checked against a dummy hash at the
+  configured user cost) takes longer than one for a user whose hash is still at cost 10; the difference disappears as users log in.
 - **Measure before deploying** (owner, once): bcrypt time on raspi4, the slowest node auth-service can run on. On
   raspi4 (`apache2-utils`; the value is a throwaway, not a password):
 ```bash
@@ -700,7 +700,8 @@ SQL
 ```
   - Before: every user row has a cost (`$2a$`, `$2b$` or `$2y$`); a row with an empty cost is not bcrypt: stop and
     check it, because it would no longer verify. Clients: only `noop` and `bcrypt10`, and zero `other`.
-  - After 24 h: users who logged in show cost 12; clients still show zero `bcrypt-other` (no client secret was
+  - After 24 h: users who logged in show the configured cost (11, `APP_PASSWORD_BCRYPT_STRENGTH` in
+    `k8s/deployment.yaml`); clients still show zero `bcrypt-other` (no client secret was
     re-encoded at the user cost).
 - **Rollback:** revert the merge; cost-12 hashes keep verifying under the old encoder (the cost is part of each
   hash).
