@@ -45,22 +45,6 @@ app:
       access-token-ttl-seconds: 3600
       allowed-scopes: [ mqtt:pub, mqtt:sub ]
     clients:
-      - client-id: grafana
-        # The env var must include the Spring Security {id} prefix; production: "{bcrypt}$2y$10$..." (other encodings log a WARN, #100).
-        client-secret: "${GRAFANA_CLIENT_SECRET}"
-        redirect-uris:
-          - https://grafana.furchert.ch/login/generic_oauth
-        post-logout-redirect-uris:
-          - https://grafana.furchert.ch
-        scopes: [ openid, profile, email ]
-      - client-id: homeassistant
-        # The env var must include the Spring Security {id} prefix; production: "{bcrypt}$2y$10$..." (other encodings log a WARN, #100).
-        client-secret: "${HA_CLIENT_SECRET}"
-        redirect-uris:
-          - https://ha.furchert.ch/auth/oidc/callback
-        post-logout-redirect-uris:
-          - https://ha.furchert.ch
-        scopes: [ openid, profile, email ]
       - client-id: device-service
         # The env var must include the Spring Security {id} prefix; production: "{bcrypt}$2y$10$..." (other encodings log a WARN, #100).
         client-secret: "${DEVICE_SERVICE_CLIENT_SECRET}"

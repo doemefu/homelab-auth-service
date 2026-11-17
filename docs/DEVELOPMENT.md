@@ -167,8 +167,6 @@ export DB_PASSWORD=homelab
 export APP_OIDC_ISSUER=http://localhost:8080
 
 # OIDC client secrets (for local testing)
-export GRAFANA_CLIENT_SECRET="{noop}local-dev-secret"
-export HA_CLIENT_SECRET="{noop}local-dev-secret"
 export DEVICE_SERVICE_CLIENT_SECRET="{noop}local-dev-secret"
 export LITELLM_CLIENT_SECRET="{noop}local-dev-secret"
 ```
@@ -588,8 +586,9 @@ After the pod starts successfully, remove these env vars.
 
 The project uses GitHub Actions for CI/CD:
 
-- **Workflow:** `.github/workflows/build.yml`
-- **Trigger:** Every push and PR to `main`
+- **Workflows:** `.github/workflows/ci.yml` (branch pushes and PRs to `main`), `.github/workflows/build.yml` (pushes to `main` only), `.github/workflows/codeql.yml`
+- **PR checks (`ci.yml`):** `test` (below), `pinned-actions` (`.github/scripts/check_action_pins.py`: every `uses:` in the parsed workflow YAML is pinned to a full commit SHA or an image digest; the script self-tests first), `actionlint` (pinned, checksum-verified binary), and `image` (amd64 image build, never pushed)
+- **Pinning:** actions are pinned by full SHA with a `# vX.Y.Z` comment, and the Dockerfile base images and the QEMU/BuildKit images in the workflows by digest. Dependabot bumps actions (7-day cooldown) and the Dockerfile; the QEMU/BuildKit images in `with:` are bumped by hand
 - **Test Job:** Runs `./mvnw verify` — equivalent to `./mvnw test` in this repo (no `maven-failsafe-plugin` bound); executes unit tests, `@WebMvcTest` slices, and Testcontainers-backed classes named `*Test.java` under `integration/`. Classes suffixed `*IT.java` would not be executed, so none exist — see #85 and "Running Tests" above.
 - **Build Job:** Multi-arch Docker image (`linux/amd64` + `linux/arm64`) pushed to `ghcr.io/doemefu/homelab-auth-service`
 
@@ -611,8 +610,6 @@ The `{noop}` examples are local-only; production uses `{bcrypt}` hashes.
 |----------|---------|---------|
 | `DB_USERNAME` | PostgreSQL username | `homelab` |
 | `DB_PASSWORD` | PostgreSQL password | `homelab` |
-| `GRAFANA_CLIENT_SECRET` | Grafana OIDC client secret | `{noop}secret` |
-| `HA_CLIENT_SECRET` | Home Assistant OIDC client secret | `{noop}secret` |
 | `DEVICE_SERVICE_CLIENT_SECRET` | device-service OIDC client secret | `{noop}secret` |
 | `LITELLM_CLIENT_SECRET` | LiteLLM OIDC client secret | `{noop}secret` |
 
