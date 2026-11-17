@@ -5,16 +5,25 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsPasswordService;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.List;
 
+/**
+ * Loads users for form login. As the {@link UserDetailsPasswordService}, it also stores the re-encoded hash when
+ * the login provider finds an outdated one (lower bcrypt cost, no prefix): every active user's hash moves to the
+ * current cost at the next successful login (#150).
+ */
 @Service
 @RequiredArgsConstructor
-public class CustomUserDetailsService implements UserDetailsService {
+public class CustomUserDetailsService implements UserDetailsService, UserDetailsPasswordService {
 
     private final UserRepository userRepository;
 
@@ -34,5 +43,15 @@ public class CustomUserDetailsService implements UserDetailsService {
                 true,
                 List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole().name()))
         );
+    }
+
+    @Override
+    @Transactional
+    @NonNull
+    public UserDetails updatePassword(@NonNull UserDetails user, @Nullable String newPassword) {
+        // user.getPassword() is the hash this login verified. If the password was reset meanwhile, nothing is
+        // written and the newer value stays.
+        userRepository.replacePasswordHash(user.getUsername(), user.getPassword(), newPassword, Instant.now());
+        return User.withUserDetails(user).password(newPassword).build();
     }
 }

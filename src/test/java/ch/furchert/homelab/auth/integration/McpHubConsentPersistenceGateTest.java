@@ -123,8 +123,12 @@ class McpHubConsentPersistenceGateTest extends AbstractIntegrationTest {
     @Order(3)
     void passwordResetRemovesConsentAndConsentPageReturns() throws Exception {
         long id = userRepository.findByUsername("hubowner").orElseThrow().getId();
-        userService.resetPassword(id, new ResetPasswordRequest(null, "password123"), "admin", true);
+        userService.resetPassword(id, new ResetPasswordRequest(null, "hubowner-reset-passphrase"), "admin", true);
         assertThat(flow.consentRows(HUB, "hubowner")).isZero();
+        // Restore the shared fixture password directly (other hub tests sign in as hubowner with it).
+        var hubowner = userRepository.findById(id).orElseThrow();
+        hubowner.setPasswordHash(passwordEncoder.encode("password123"));
+        userRepository.save(hubowner);
         MvcResult r = flow.authorizeAs(hubReq(), "hubowner", "password123", AuthCodeFlow.pkce());
         assertThat(r.getResponse().getStatus()).isEqualTo(200);   // consent page again
     }

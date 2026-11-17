@@ -1,5 +1,6 @@
 package ch.furchert.homelab.auth.service;
 
+import ch.furchert.homelab.auth.config.ClientSecretEncoder;
 import ch.furchert.homelab.auth.config.OidcClientProperties;
 import ch.furchert.homelab.auth.dto.DeviceClientCreatedResponse;
 import ch.furchert.homelab.auth.dto.DeviceClientResponse;
@@ -9,7 +10,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
@@ -47,7 +47,7 @@ public class DeviceClientService {
 
     private final RegisteredClientRepository registeredClientRepository;
     private final JdbcTemplate jdbcTemplate;
-    private final PasswordEncoder passwordEncoder;
+    private final ClientSecretEncoder clientSecretEncoder;
     private final ClientKindLookup clientKindLookup;
     private final OidcClientProperties properties;
     private final ReservedClientIds reservedClientIds;
@@ -64,7 +64,7 @@ public class DeviceClientService {
         }
 
         String plaintextSecret = generateSecret();
-        String hashedSecret = Objects.requireNonNull(passwordEncoder.encode(plaintextSecret),
+        String hashedSecret = Objects.requireNonNull(clientSecretEncoder.encoder().encode(plaintextSecret),
                 "PasswordEncoder returned null");
         if (!hashedSecret.startsWith(BCRYPT_PREFIX)) {
             // DelegatingPasswordEncoder must emit a {bcrypt} prefix for the BCrypt
