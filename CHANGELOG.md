@@ -4,6 +4,7 @@
 
 ### Security
 
+- Admin API error responses no longer echo request input (#151): `error` is a constant text per case (for example `username already in use`, `unknown user`, `client id not available`), and `details` names the request field (`INTERFACES.md` §4 "Error messages"). Any other rejected argument answers `invalid request`. Clients that matched the old texts must switch to the status code and the `details` key; furchert-ch never did.
 - Password policy for passwords set through the API (#150): at least 15 characters, at most 72 bytes, not on a bundled list of common passwords, not the username or e-mail address. A rejection answers `400` and names the failed rule under the field (`INTERFACES.md` §4 "Password policy"). Existing passwords keep working until they are changed.
 - User passwords are hashed with bcrypt (`APP_PASSWORD_BCRYPT_STRENGTH`, default 12; the Deployment sets 11 after the raspi4 measurement); an older hash is re-encoded at the next successful login. OAuth client secrets keep cost 10 on their own encoder, so client authentication never rewrites them at the user cost. The first-admin bootstrap runbook no longer puts the password on the command line.
 - The unused `grafana` and `homeassistant` OIDC clients are removed (#154): no longer configured, `GRAFANA_CLIENT_SECRET` / `HA_CLIENT_SECRET` are no longer read, and Flyway V11 deletes their rows, authorizations and consents (as V9 did for n8n).

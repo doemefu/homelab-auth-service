@@ -3,6 +3,7 @@ package ch.furchert.homelab.auth.controller;
 import ch.furchert.homelab.auth.config.LoginEventProperties;
 import ch.furchert.homelab.auth.dto.LoginEventPage;
 import ch.furchert.homelab.auth.dto.LoginEventResponse;
+import ch.furchert.homelab.auth.exception.InvalidInputException;
 import ch.furchert.homelab.auth.exception.LoginEventsDisabledException;
 import ch.furchert.homelab.auth.repository.LoginEventOutboxRepository;
 import ch.furchert.homelab.auth.service.LoginEventFeature;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Pull endpoint for the login-event outbox (docs/060 §7.6), consumed by data-service with a
@@ -40,10 +42,10 @@ public class LoginEventController {
         int max = properties.getMaxLimit();
         int size = limit == null ? properties.getDefaultLimit() : limit;
         if (after < 0) {
-            throw new IllegalArgumentException("after must be >= 0");
+            throw new InvalidInputException("after must be >= 0", Map.of("after", "must be >= 0"));
         }
         if (size < 1 || size > max) {
-            throw new IllegalArgumentException("limit must be between 1 and " + max);
+            throw new InvalidInputException("limit must be between 1 and " + max, Map.of("limit", "must be between 1 and " + max));
         }
 
         List<LoginEventResponse> rows = repository.findAfter(after, size + 1, properties.getSettle());

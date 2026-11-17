@@ -26,6 +26,7 @@ import java.time.Instant;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -56,11 +57,11 @@ public class DeviceClientService {
     public DeviceClientCreatedResponse create(String clientId, String description) {
         reservedClientIds.lockIdentityNamespace();
         if (registeredClientRepository.findByClientId(clientId) != null) {
-            throw new ResourceConflictException("Client '" + clientId + "' already exists");
+            throw new ResourceConflictException("client already exists", Map.of("clientId", "already exists"));
         }
         // Client ids and usernames share one namespace (#143): no configured client id, no existing username.
         if (reservedClientIds.isReserved(clientId) || reservedClientIds.isUsernameTaken(clientId)) {
-            throw new ResourceConflictException("Client id '" + clientId + "' is not available");
+            throw new ResourceConflictException("client id not available", Map.of("clientId", "not available"));
         }
 
         String plaintextSecret = generateSecret();
@@ -132,7 +133,7 @@ public class DeviceClientService {
                             splitScopes(rs.getString("scopes"))),
                     CLIENT_KIND_DEVICE, clientId);
         } catch (EmptyResultDataAccessException _) {
-            throw new ResourceNotFoundException("Device client '" + clientId + "' not found");
+            throw new ResourceNotFoundException("unknown client");
         }
     }
 
