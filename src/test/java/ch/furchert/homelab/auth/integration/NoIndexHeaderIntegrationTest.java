@@ -31,11 +31,15 @@ class NoIndexHeaderIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void allEndpointsCarryNoindex() {
-        for (String path : new String[] {"/login", "/userinfo", "/.well-known/openid-configuration",
-                "/oauth2/jwks", "/actuator/health", "/api/v1/users", "/does-not-exist"}) {
-            assertThat(client().get().uri(path).retrieve().toBodilessEntity().getHeaders()
-                    .getFirst("X-Robots-Tag")).as(path).isEqualTo("noindex, nofollow");
+    void allEndpointsCarryExactlyOneNoindexHeader() {
+        String[][] cases = {
+                {"/login", "200"}, {"/userinfo", "302"}, {"/.well-known/openid-configuration", "200"},
+                {"/oauth2/jwks", "200"}, {"/actuator/health", "200"}, {"/api/v1/users", "401"},
+                {"/swagger-ui.html", "302"}, {"/does-not-exist", "403"}};
+        for (String[] c : cases) {
+            var res = client().get().uri(c[0]).retrieve().toBodilessEntity();
+            assertThat(res.getStatusCode().value()).as(c[0]).isEqualTo(Integer.parseInt(c[1]));
+            assertThat(res.getHeaders().get("X-Robots-Tag")).as(c[0]).containsExactly("noindex, nofollow");
         }
     }
 }
