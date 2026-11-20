@@ -25,6 +25,9 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
+    groups:
+      codeql:
+        patterns: ["github/codeql-action*"]
     # Let a new action release age a week before Dependabot proposes it.
     cooldown:
       default-days: 7
